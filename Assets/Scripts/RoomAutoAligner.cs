@@ -38,33 +38,48 @@ public static class RoomAutoAligner
             list.Add(c);
         }
 
-        foreach (var kvp in groups)
+        // Iterate a few times to settle multi-connector constraints
+        const int maxIterations = 4;
+        const float moveEpsilon = 1e-4f;
+
+        for (int iter = 0; iter < maxIterations; iter++)
         {
-            List<InvisibleConnector> list = kvp.Value;
-            if (list.Count < 2)
-                continue; // Need at least 2 to align
+            bool anyMoved = false;
 
-            // Pick anchor: explicit isAnchor, otherwise first
-            InvisibleConnector anchor = list.FirstOrDefault(c => c.isAnchor) ?? list[0];
-            Transform anchorRoomRoot = FindRoomRoot(anchor.transform, roomRoots);
-            if (anchorRoomRoot == null)
-                continue;
-
-            Vector3 anchorPos = anchor.transform.position;
-            Vector3 anchorForward = anchor.transform.forward;
-
-            foreach (var c in list)
+            foreach (var kvp in groups)
             {
-                if (c == anchor)
+                List<InvisibleConnector> list = kvp.Value;
+                if (list.Count < 2)
+                    continue; // Need at least 2 to align
+
+                // Pick anchor: explicit isAnchor, otherwise deterministic by InstanceID
+                InvisibleConnector anchor = list.FirstOrDefault(c => c.isAnchor) ??
+                                            list.OrderBy(c => c.transform.GetInstanceID()).First();
+
+                Transform anchorRoomRoot = FindRoomRoot(anchor.transform, roomRoots);
+                if (anchorRoomRoot == null)
                     continue;
 
-                Transform roomRoot = FindRoomRoot(c.transform, roomRoots);
-                if (roomRoot == null || roomRoot == anchorRoomRoot)
-                    continue;
+                Vector3 anchorPos = anchor.transform.position;
+                Vector3 anchorForward = anchor.transform.forward;
 
-                // Rotate/translate room so this connector faces and snaps to the anchor
-                AlignRoomToAnchor(anchorPos, anchorForward, c, roomRoot, wallThickness);
+                foreach (var c in list)
+                {
+                    if (c == anchor)
+                        continue;
+
+                    Transform roomRoot = FindRoomRoot(c.transform, roomRoots);
+                    if (roomRoot == null || roomRoot == anchorRoomRoot)
+                        continue;
+
+                    // Rotate/translate room so this connector faces and snaps to the anchor
+                    bool moved = AlignRoomToAnchor(anchorPos, anchorForward, c, roomRoot, wallThickness, moveEpsilon);
+                    anyMoved |= moved;
+                }
             }
+
+            if (!anyMoved)
+                break;
         }
     }
 
@@ -81,12 +96,13 @@ public static class RoomAutoAligner
     /// Rotate/translate target room so its connector forward looks at the anchor connector,
     /// then snap with a small pull-back to avoid wall overlap.
     /// </summary>
-    private static void AlignRoomToAnchor(
+    private static bool AlignRoomToAnchor(
         Vector3 anchorPos,
         Vector3 anchorForward,
         InvisibleConnector targetConnector,
         Transform targetRoomRoot,
-        float wallThickness)
+        float wallThickness,
+        float moveEpsilon)
     {
         // 1) Forward from connector (defined when created; outward normal of wall)
         Vector3 targetForward = targetConnector.transform.forward;
@@ -106,12 +122,24 @@ public static class RoomAutoAligner
         Quaternion toFacing = Quaternion.AngleAxis(angle, Vector3.up);
         Vector3 pivot = targetConnector.transform.position;
 
-        targetRoomRoot.position = pivot + toFacing * (targetRoomRoot.position - pivot);
-        targetRoomRoot.rotation = toFacing * targetRoomRoot.rotation;
+        Vector3 newPos = pivot + toFacing * (targetRoomRoot.position - pivot);
+        Quaternion newRot = toFacing * targetRoomRoot.rotation;
 
         // 4) Snap with small separation to avoid wall overlap
         Vector3 desiredConnectorPos = anchorPos - anchorForwardXZ * (wallThickness * 0.5f);
         Vector3 delta = desiredConnectorPos - targetConnector.transform.position;
-        targetRoomRoot.position += delta;
+
+        newPos += delta;
+
+        bool moved = (newPos - targetRoomRoot.position).sqrMagnitude > moveEpsilon ||
+                     Quaternion.Angle(newRot, targetRoomRoot.rotation) > 0.01f;
+
+        if (moved)
+        {
+            targetRoomRoot.position = newPos;
+            targetRoomRoot.rotation = newRot;
+        }
+
+        return moved;
     }
 }
