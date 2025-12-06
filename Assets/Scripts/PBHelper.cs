@@ -37,9 +37,10 @@ namespace AILevelDesign
             return CreateRoomComposite(name, position, size, DefaultWallThickness, DefaultFloorThickness);
         }
 
-        public static GameObject CreateStairs(string name, Vector3 position, Vector3 size, Material material = null)
+        public static GameObject CreateStairs(string name, Vector3 position, Vector3 size, float yawDegrees, Material material = null)
         {
-            return CreateCubeShape(name, position, size, Quaternion.identity, null, material);
+            Quaternion rot = Quaternion.Euler(0f, yawDegrees, 0f);
+            return CreateRampShape(name, position, size, rot, null, material);
         }
 
         public static GameObject CreateElement(string name, Vector3 position, Vector3 size, Quaternion rotation, Transform parent = null, Material material = null)
@@ -273,6 +274,74 @@ namespace AILevelDesign
             EditorUtility.SetDirty(mesh);
 #endif
             return mesh.gameObject;
+        }
+
+        // Simple triangular prism ramp for stairs
+        private static GameObject CreateRampShape(string name, Vector3 position, Vector3 size, Quaternion rotation, Transform parent, Material material = null)
+        {
+            GameObject go = new GameObject(string.IsNullOrEmpty(name) ? "Ramp" : name);
+            if (parent != null)
+            {
+                go.transform.SetParent(parent, false);
+                go.transform.localPosition = position;
+                go.transform.localRotation = rotation;
+            }
+            else
+            {
+                go.transform.SetPositionAndRotation(position, rotation);
+            }
+
+            MeshFilter mf = go.AddComponent<MeshFilter>();
+            MeshRenderer mr = go.AddComponent<MeshRenderer>();
+            MeshCollider mc = go.AddComponent<MeshCollider>();
+
+            if (material != null)
+                mr.sharedMaterial = material;
+
+            float hx = size.x * 0.5f;
+            float hy = size.y;
+            float hz = size.z * 0.5f;
+
+            // Triangular prism: ramp rises along +z
+            Vector3[] verts = new Vector3[]
+            {
+                new Vector3(-hx, 0f, -hz),
+                new Vector3( hx, 0f, -hz),
+                new Vector3(-hx, 0f,  hz),
+                new Vector3( hx, 0f,  hz),
+                new Vector3(-hx, hy,  hz),
+                new Vector3( hx, hy,  hz)
+            };
+
+            int[] tris = new int[]
+            {
+                // bottom
+                0,2,1, 1,2,3,
+                // back (low edge)
+                0,1,4, 4,1,5,
+                // left ramp face
+                0,4,2,
+                // right ramp face
+                1,3,5,
+                // top ramp face
+                2,4,3, 3,4,5
+            };
+
+            Mesh mesh = new Mesh();
+            mesh.name = "RampMesh";
+            mesh.vertices = verts;
+            mesh.triangles = tris;
+            mesh.RecalculateNormals();
+
+            mf.sharedMesh = mesh;
+            mc.sharedMesh = mesh;
+
+#if UNITY_EDITOR
+            Undo.RegisterCreatedObjectUndo(go, $"Create {go.name}");
+            EditorUtility.SetDirty(go);
+#endif
+
+            return go;
         }
     }
 }

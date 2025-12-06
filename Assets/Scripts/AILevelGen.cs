@@ -91,6 +91,7 @@ public class AILevelGenerator : EditorWindow
                 return;
             }
 
+            data = FixGeometry(data);
             BuildLevel(data);
         }
         catch (Exception ex)
@@ -104,17 +105,73 @@ public class AILevelGenerator : EditorWindow
     {
         Dictionary<string, GameObject> roomLookup = new Dictionary<string, GameObject>();
 
+        // Determine per-floor base elevations
+        Dictionary<string, float> floorElevations = new Dictionary<string, float>();
         if (data.floors != null)
         {
-            foreach (Floor floor in data.floors)
+            for (int i = 0; i < data.floors.Length; i++)
             {
-                if (floor.rooms == null) continue;
+                var f = data.floors[i];
+                if (f == null) continue;
+                float baseY = i * defaultRoomHeight;
+                if (!string.IsNullOrEmpty(f.id))
+                    floorElevations[f.id] = baseY;
+            }
+        }
+
+        // Precompute stair placements (adjust height/position) for later use and openings
+        List<StairPlacement> stairPlacements = new List<StairPlacement>();
+        if (data.stairs != null)
+        {
+            foreach (var stair in data.stairs)
+            {
+                if (stair == null) continue;
+
+                float fromY = (stair.floor_from != null && floorElevations.TryGetValue(stair.floor_from, out var fy)) ? fy : 0f;
+                float toY = (stair.floor_to != null && floorElevations.TryGetValue(stair.floor_to, out var ty)) ? ty : 0f;
+
+                Vector3 size = ToSize(stair.size, defaultStairHeight, 1f, 1f);
+                float verticalSpan = Mathf.Abs(toY - fromY);
+                if (verticalSpan > 0.01f)
+                {
+                    size.y = verticalSpan;
+                }
+                else if (size.y <= 0.01f)
+                {
+                    size.y = defaultStairHeight;
+                }
+
+                Vector3 pos = ToPosition(stair.position);
+                // Place ramp base on top of the source floor slab
+                pos.y = fromY - defaultRoomHeight * 0.5f + defaultSlabThickness * 0.5f;
+
+                stairPlacements.Add(new StairPlacement
+                {
+                    stair = stair,
+                    position = pos,
+                    size = size,
+                    fromY = fromY,
+                    toY = toY
+                });
+            }
+        }
+
+        if (data.floors != null)
+        {
+            for (int floorIndex = 0; floorIndex < data.floors.Length; floorIndex++)
+            {
+                Floor floor = data.floors[floorIndex];
+                if (floor == null || floor.rooms == null) continue;
+
+                float floorBaseY = (!string.IsNullOrEmpty(floor.id) && floorElevations.TryGetValue(floor.id, out var fyBase))
+                    ? fyBase
+                    : floorIndex * defaultRoomHeight;
 
                 foreach (Room room in floor.rooms)
                 {
                     Vector3 roomSize = ToSize(room.size, defaultRoomHeight);
-                    // Rooms start at origin; connectors will reposition/rotate them automatically.
-                    Vector3 roomPos = Vector3.zero;
+                    Vector3 roomPosLocal = ToRoomPosition(room.position);
+                    Vector3 roomPos = SnapVector(new Vector3(roomPosLocal.x, floorBaseY + roomPosLocal.y, roomPosLocal.z));
                     GameObject roomRoot = new GameObject(string.IsNullOrEmpty(room.id) ? "Room" : room.id);
                     roomRoot.transform.position = roomPos;
 
@@ -122,9 +179,11 @@ public class AILevelGenerator : EditorWindow
                     bool hasCustomWalls = room.walls != null && room.walls.Length > 0;
                     bool hasCustomRoof = room.roof != null;
 
+                    HoleSpec? hole = FindHoleForRoom(roomRoot.transform.position, roomSize, stairPlacements, floor);
+
                     if (!hasCustomFloor && !hasCustomWalls)
                     {
-                        BuildAutoRoomWithOpenings(room, roomRoot, roomSize);
+                        BuildAutoRoomWithOpenings(room, roomRoot, roomSize, hole);
                         if (hasCustomRoof)
                         {
                             AddRoofElement(room, roomRoot, roomSize);
@@ -188,13 +247,12 @@ public class AILevelGenerator : EditorWindow
             }
         }
 
-        if (data.stairs != null)
+        if (stairPlacements.Count > 0)
         {
-            foreach (Stair stair in data.stairs)
+            foreach (var sp in stairPlacements)
             {
-                Vector3 size = ToSize(stair.size, defaultStairHeight, 1f, 1f);
-                Vector3 pos = ToPosition(stair.position);
-                PBHelper.CreateStairs(string.IsNullOrEmpty(stair.description) ? "Stairs" : stair.description, pos, size, stairMaterial);
+                float yaw = (sp.stair.rotation != null && sp.stair.rotation.Length > 1) ? sp.stair.rotation[1] : 0f;
+                PBHelper.CreateStairs(string.IsNullOrEmpty(sp.stair.description) ? "Stairs" : sp.stair.description, sp.position, sp.size, yaw, stairMaterial);
             }
         }
 
@@ -208,16 +266,24 @@ public class AILevelGenerator : EditorWindow
     // Auto room & door openings
     // ------------------------------------------------------------------------
 
-    private void BuildAutoRoomWithOpenings(Room room, GameObject roomRoot, Vector3 roomSize)
+    private void BuildAutoRoomWithOpenings(Room room, GameObject roomRoot, Vector3 roomSize, HoleSpec? floorHole)
     {
         float halfX = roomSize.x * 0.5f;
         float halfY = roomSize.y * 0.5f;
         float halfZ = roomSize.z * 0.5f;
 
-        // Floor
+        // Floor (with optional hole for stairs)
         Vector3 floorSize = new Vector3(roomSize.x, defaultSlabThickness, roomSize.z);
-        Vector3 floorPos = new Vector3(0f, -halfY + floorSize.y * 0.5f, 0f);
-        PBHelper.CreateElement("Floor", floorPos, floorSize, Quaternion.identity, roomRoot.transform, floorMaterial);
+        float floorY = -halfY + floorSize.y * 0.5f;
+        if (floorHole.HasValue)
+        {
+            BuildFloorWithOpening(roomRoot.transform, roomSize, floorY, floorHole.Value);
+        }
+        else
+        {
+            Vector3 floorPos = new Vector3(0f, floorY, 0f);
+            PBHelper.CreateElement("Floor", floorPos, floorSize, Quaternion.identity, roomRoot.transform, floorMaterial);
+        }
 
         // Openings per wall
         List<PBHelper.Opening> frontOpenings = new List<PBHelper.Opening>();
@@ -289,6 +355,116 @@ public class AILevelGenerator : EditorWindow
             leftOpenings.ToArray(),
             wallMaterial);
         left.transform.localPosition = new Vector3(-halfX + defaultWallThickness * 0.5f, 0f, 0f);
+    }
+
+    // ------------------------------------------------------------------------
+    // Floor helpers (stairs openings)
+    // ------------------------------------------------------------------------
+
+    private HoleSpec? FindHoleForRoom(Vector3 roomWorldPos, Vector3 roomSize, List<StairPlacement> stairPlacements, Floor floor)
+    {
+        if (stairPlacements == null || stairPlacements.Count == 0 || floor == null || string.IsNullOrEmpty(floor.id))
+            return null;
+
+        float roomHalfX = roomSize.x * 0.5f;
+        float roomHalfZ = roomSize.z * 0.5f;
+
+        foreach (var sp in stairPlacements)
+        {
+            if (sp.stair == null || sp.stair.floor_to != floor.id)
+                continue;
+
+            Vector2 centerTop = new Vector2(sp.position.x, sp.position.z);
+            float yaw = (sp.stair.rotation != null && sp.stair.rotation.Length > 1) ? sp.stair.rotation[1] : 0f;
+            float rad = yaw * Mathf.Deg2Rad;
+            float sx = sp.size.x * 0.5f;
+            float sz = sp.size.z * 0.5f;
+            float cos = Mathf.Abs(Mathf.Cos(rad));
+            float sin = Mathf.Abs(Mathf.Sin(rad));
+            float holeHalfX = cos * sx + sin * sz;
+            float holeHalfZ = sin * sx + cos * sz;
+            Vector2 holeSize = new Vector2(holeHalfX * 2f, holeHalfZ * 2f);
+
+            Vector2 roomMin = new Vector2(roomWorldPos.x - roomHalfX, roomWorldPos.z - roomHalfZ);
+            Vector2 roomMax = new Vector2(roomWorldPos.x + roomHalfX, roomWorldPos.z + roomHalfZ);
+
+            if (centerTop.x < roomMin.x || centerTop.x > roomMax.x || centerTop.y < roomMin.y || centerTop.y > roomMax.y)
+                continue;
+
+            Vector2 localCenter = new Vector2(centerTop.x - roomWorldPos.x, centerTop.y - roomWorldPos.z);
+            return new HoleSpec { center = localCenter, size = holeSize };
+        }
+
+        return null;
+    }
+
+    private void BuildFloorWithOpening(Transform parent, Vector3 roomSize, float floorY, HoleSpec hole)
+    {
+        float halfX = roomSize.x * 0.5f;
+        float halfZ = roomSize.z * 0.5f;
+        float thickness = defaultSlabThickness;
+        float minX = -halfX;
+        float maxX = halfX;
+        float minZ = -halfZ;
+        float maxZ = halfZ;
+
+        float hx = Mathf.Clamp(hole.size.x, 0.01f, roomSize.x - 0.01f);
+        float hz = Mathf.Clamp(hole.size.y, 0.01f, roomSize.z - 0.01f);
+
+        float holeMinX = Mathf.Clamp(hole.center.x - hx * 0.5f, minX, maxX);
+        float holeMaxX = Mathf.Clamp(hole.center.x + hx * 0.5f, minX, maxX);
+        float holeMinZ = Mathf.Clamp(hole.center.y - hz * 0.5f, minZ, maxZ);
+        float holeMaxZ = Mathf.Clamp(hole.center.y + hz * 0.5f, minZ, maxZ);
+
+        float eps = 0.001f;
+        float holeWidth = holeMaxX - holeMinX;
+        float holeDepth = holeMaxZ - holeMinZ;
+
+        if (holeWidth <= eps || holeDepth <= eps)
+        {
+            Vector3 floorSize = new Vector3(roomSize.x, thickness, roomSize.z);
+            Vector3 floorPos = new Vector3(0f, floorY, 0f);
+            PBHelper.CreateElement("Floor", floorPos, floorSize, Quaternion.identity, parent, floorMaterial);
+            return;
+        }
+
+        float centerX = (holeMinX + holeMaxX) * 0.5f;
+
+        // Left strip
+        float leftWidth = holeMinX - minX;
+        if (leftWidth > eps)
+        {
+            Vector3 size = new Vector3(leftWidth, thickness, roomSize.z);
+            Vector3 pos = new Vector3(minX + leftWidth * 0.5f, floorY, 0f);
+            PBHelper.CreateElement("Floor_Left", pos, size, Quaternion.identity, parent, floorMaterial);
+        }
+
+        // Right strip
+        float rightWidth = maxX - holeMaxX;
+        if (rightWidth > eps)
+        {
+            Vector3 size = new Vector3(rightWidth, thickness, roomSize.z);
+            Vector3 pos = new Vector3(maxX - rightWidth * 0.5f, floorY, 0f);
+            PBHelper.CreateElement("Floor_Right", pos, size, Quaternion.identity, parent, floorMaterial);
+        }
+
+        // Front strip (central span)
+        float frontDepth = maxZ - holeMaxZ;
+        if (frontDepth > eps)
+        {
+            Vector3 size = new Vector3(holeWidth, thickness, frontDepth);
+            Vector3 pos = new Vector3(centerX, floorY, holeMaxZ + frontDepth * 0.5f);
+            PBHelper.CreateElement("Floor_Front", pos, size, Quaternion.identity, parent, floorMaterial);
+        }
+
+        // Back strip (central span)
+        float backDepth = holeMinZ - minZ;
+        if (backDepth > eps)
+        {
+            Vector3 size = new Vector3(holeWidth, thickness, backDepth);
+            Vector3 pos = new Vector3(centerX, floorY, holeMinZ - backDepth * 0.5f);
+            PBHelper.CreateElement("Floor_Back", pos, size, Quaternion.identity, parent, floorMaterial);
+        }
     }
 
     // ------------------------------------------------------------------------
@@ -398,8 +574,10 @@ public class AILevelGenerator : EditorWindow
 
     private Vector3 ToRoomPosition(float[] pos)
     {
-        // Room position from JSON is intentionally ignored; auto-aligner will place rooms.
-        return Vector3.zero;
+        float x = (pos != null && pos.Length > 0) ? pos[0] : 0f;
+        float z = (pos != null && pos.Length > 1) ? pos[1] : 0f;
+        float y = (pos != null && pos.Length > 2) ? pos[2] : 0f;
+        return new Vector3(x, y, z);
     }
 
     private Vector3 ToPosition(float[] pos)
@@ -602,6 +780,318 @@ public class AILevelGenerator : EditorWindow
     }
 
     // ------------------------------------------------------------------------
+    // Geometry auto-fix (JSON pre-processing)
+    // ------------------------------------------------------------------------
+    private LevelData FixGeometry(LevelData data)
+    {
+        if (data == null) return data;
+
+        // Defaults
+        if (data.floors != null)
+        {
+            foreach (var floor in data.floors)
+            {
+                if (floor?.rooms == null) continue;
+                foreach (var room in floor.rooms)
+                {
+                    if (room == null) continue;
+                    DefaultArray(ref room.size, new float[] { 4f, 4f, defaultRoomHeight });
+                    DefaultArray(ref room.position, new float[] { 0f, 0f, 0f });
+                    DefaultElements(room);
+                    DefaultOpenings(room.doors, isWindow: false);
+                    DefaultOpenings(room.windows, isWindow: true);
+                }
+            }
+        }
+        if (data.stairs != null)
+        {
+            foreach (var stair in data.stairs)
+            {
+                if (stair == null) continue;
+                DefaultArray(ref stair.size, new float[] { 2f, defaultStairHeight, 3f });
+                DefaultArray(ref stair.position, new float[] { 0f, 0f, 0f });
+                DefaultArray(ref stair.rotation, new float[] { 0f, 0f, 0f });
+            }
+        }
+
+        // Room separation (XZ) to avoid overlaps
+        SeparateRooms(data, 0.5f);
+
+        // Auto-rotate doors/windows if missing/blocked
+        AutoRotateOpenings(data);
+
+        // Stair clearance (simple inward clamp, rotation if needed)
+        FixStairs(data);
+
+        return data;
+    }
+
+    private void DefaultArray(ref float[] arr, float[] def)
+    {
+        if (arr == null) arr = (float[])def.Clone();
+        if (arr.Length < 3) Array.Resize(ref arr, 3);
+        for (int i = 0; i < 3; i++)
+        {
+            if (float.IsNaN(arr[i]) || arr[i] == 0f)
+            {
+                arr[i] = def[Mathf.Min(i, def.Length - 1)];
+            }
+        }
+    }
+
+    private void DefaultElements(Room room)
+    {
+        if (room.floor != null)
+        {
+            DefaultArray(ref room.floor.size, new float[] { room.size?[0] ?? 4f, 0.1f, room.size?[1] ?? 4f });
+            DefaultArray(ref room.floor.position, new float[] { 0f, 0f, 0f });
+            DefaultArray(ref room.floor.rotation, new float[] { 0f, 0f, 0f });
+        }
+        if (room.roof != null)
+        {
+            DefaultArray(ref room.roof.size, new float[] { room.size?[0] ?? 4f, 0.1f, room.size?[1] ?? 4f });
+            DefaultArray(ref room.roof.position, new float[] { 0f, 0f, room.size?[2] ?? defaultRoomHeight });
+            DefaultArray(ref room.roof.rotation, new float[] { 0f, 0f, 0f });
+        }
+        if (room.walls != null)
+        {
+            foreach (var w in room.walls)
+            {
+                if (w == null) continue;
+                DefaultArray(ref w.size, new float[] { 0.1f, room.size?[2] ?? defaultRoomHeight, 0.1f });
+                DefaultArray(ref w.position, new float[] { 0f, 0f, 0f });
+                DefaultArray(ref w.rotation, new float[] { 0f, 0f, 0f });
+            }
+        }
+    }
+
+    private void DefaultOpenings(Door[] list, bool isWindow)
+    {
+        if (list == null) return;
+        foreach (var d in list)
+        {
+            if (d == null) continue;
+            DefaultArray(ref d.size, isWindow ? new float[] { 2f, 1.2f, 0.2f } : new float[] { 1f, 2f, 0.2f });
+            DefaultArray(ref d.position, isWindow ? new float[] { 0f, 0f, 1f } : new float[] { 0f, 0f, 0f });
+            DefaultArray(ref d.rotation, new float[] { 0f, 0f, 0f });
+        }
+    }
+    private void DefaultOpenings(Window[] list, bool isWindow)
+    {
+        if (list == null) return;
+        foreach (var d in list)
+        {
+            if (d == null) continue;
+            DefaultArray(ref d.size, isWindow ? new float[] { 2f, 1.2f, 0.2f } : new float[] { 1f, 2f, 0.2f });
+            DefaultArray(ref d.position, isWindow ? new float[] { 0f, 0f, 1f } : new float[] { 0f, 0f, 0f });
+            DefaultArray(ref d.rotation, new float[] { 0f, 0f, 0f });
+        }
+    }
+
+    private void SeparateRooms(LevelData data, float gap)
+    {
+        List<(Vector3 pos, Vector3 size)> placed = new List<(Vector3 pos, Vector3 size)>();
+        foreach (var floor in data.floors ?? Array.Empty<Floor>())
+        {
+            if (floor?.rooms == null) continue;
+            foreach (var room in floor.rooms)
+            {
+                if (room == null) continue;
+                Vector3 pos = ToVec3Room(room.position);
+                Vector3 size = ToSize(room.size, defaultRoomHeight);
+                foreach (var p in placed)
+                {
+                    if (AABBOverlap(pos, size, p.pos, p.size))
+                    {
+                        Vector2 dir = new Vector2(pos.x - p.pos.x, pos.z - p.pos.z);
+                        if (dir.sqrMagnitude < 1e-4f) dir = Vector2.right;
+                        dir.Normalize();
+                        pos.x += dir.x * (gap + size.x * 0.5f + p.size.x * 0.5f);
+                        pos.z += dir.y * (gap + size.z * 0.5f + p.size.z * 0.5f);
+                    }
+                }
+                room.position = new float[] { pos.x, pos.z, pos.y };
+                placed.Add((pos, size));
+            }
+        }
+    }
+
+    private bool AABBOverlap(Vector3 aPos, Vector3 aSize, Vector3 bPos, Vector3 bSize)
+    {
+        Vector3 aMin = aPos - aSize * 0.5f;
+        Vector3 aMax = aPos + aSize * 0.5f;
+        Vector3 bMin = bPos - bSize * 0.5f;
+        Vector3 bMax = bPos + bSize * 0.5f;
+        return (aMin.x <= bMax.x && aMax.x >= bMin.x) &&
+               (aMin.y <= bMax.y && aMax.y >= bMin.y) &&
+               (aMin.z <= bMax.z && aMax.z >= bMin.z);
+    }
+
+    private void AutoRotateOpenings(LevelData data)
+    {
+        foreach (var floor in data.floors ?? Array.Empty<Floor>())
+        {
+            if (floor?.rooms == null) continue;
+            foreach (var room in floor.rooms)
+            {
+                if (room == null) continue;
+                Vector3 size = ToSize(room.size, defaultRoomHeight);
+                AutoRotateList(size, room.doors);
+                AutoRotateList(size, room.windows);
+            }
+        }
+    }
+
+    private void AutoRotateList(Vector3 roomSize, Door[] list)
+    {
+        if (list == null) return;
+        foreach (var d in list)
+        {
+            if (d == null) continue;
+            if (d.rotation != null && d.rotation.Length >= 3) continue;
+            float bestYaw = 0f;
+            float bestScore = float.NegativeInfinity;
+            for (int k = 0; k < 4; k++)
+            {
+                float yaw = 90f * k;
+                float score = ClearanceScore(roomSize, d.position, yaw);
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestYaw = yaw;
+                }
+            }
+            d.rotation = new float[] { 0f, bestYaw, 0f };
+        }
+    }
+    private void AutoRotateList(Vector3 roomSize, Window[] list)
+    {
+        if (list == null) return;
+        foreach (var d in list)
+        {
+            if (d == null) continue;
+            if (d.rotation != null && d.rotation.Length >= 3) continue;
+            float bestYaw = 0f;
+            float bestScore = float.NegativeInfinity;
+            for (int k = 0; k < 4; k++)
+            {
+                float yaw = 90f * k;
+                float score = ClearanceScore(roomSize, d.position, yaw);
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestYaw = yaw;
+                }
+            }
+            d.rotation = new float[] { 0f, bestYaw, 0f };
+        }
+    }
+
+    private float ClearanceScore(Vector3 roomSize, float[] posArr, float yaw)
+    {
+        Vector3 p = ToVec3Room(posArr);
+        Vector3 dir = YawDir(yaw);
+        float halfX = roomSize.x * 0.5f;
+        float halfZ = roomSize.z * 0.5f;
+        float score;
+        if (Mathf.Abs(dir.x) > Mathf.Abs(dir.z))
+        {
+            score = dir.x > 0 ? (halfX - p.x) : (p.x + halfX);
+        }
+        else
+        {
+            score = dir.z > 0 ? (halfZ - p.z) : (p.z + halfZ);
+        }
+        return score;
+    }
+
+    private Vector3 YawDir(float yaw)
+    {
+        float rad = yaw * Mathf.Deg2Rad;
+        return new Vector3(Mathf.Sin(rad), 0f, Mathf.Cos(rad));
+    }
+
+    private void FixStairs(LevelData data)
+    {
+        if (data.stairs == null) return;
+
+        // Build simple hall bounds per floor (pick largest room on the floor)
+        Dictionary<string, Vector2> floorBounds = new Dictionary<string, Vector2>();
+        if (data.floors != null)
+        {
+            foreach (var f in data.floors)
+            {
+                if (f == null || f.rooms == null || string.IsNullOrEmpty(f.id)) continue;
+                float bestX = 7f, bestZ = 5f;
+                foreach (var r in f.rooms)
+                {
+                    if (r == null || r.size == null || r.size.Length < 2) continue;
+                    bestX = Mathf.Max(bestX, r.size[0] * 0.5f);
+                    bestZ = Mathf.Max(bestZ, r.size[1] * 0.5f);
+                }
+                floorBounds[f.id] = new Vector2(bestX, bestZ);
+            }
+        }
+
+        foreach (var stair in data.stairs)
+        {
+            if (stair == null) continue;
+            Vector3 pos = ToVec3Room(stair.position);
+            if (stair.rotation == null || stair.rotation.Length < 3)
+                stair.rotation = new float[] { 0f, 0f, 0f };
+
+            // Clamp inward (assumes typical hall span if no context)
+            Vector2 bounds = new Vector2(7f, 5f);
+            if (!string.IsNullOrEmpty(stair.floor_from) && floorBounds.TryGetValue(stair.floor_from, out var b))
+                bounds = b;
+            float margin = Mathf.Max(1.0f, Mathf.Max((stair.size?[0] ?? 2f), (stair.size?[2] ?? 3f)) * 0.5f + 0.5f);
+            pos.x = Mathf.Clamp(pos.x, -bounds.x + margin, bounds.x - margin);
+            pos.z = Mathf.Clamp(pos.z, -bounds.y + margin, bounds.y - margin);
+
+            // Ensure entry face has clearance from walls (push inward along facing dir if needed)
+            float yaw = stair.rotation.Length > 1 ? stair.rotation[1] : 0f;
+            Vector3 dir = YawDir(yaw);
+            float halfZ = (stair.size != null && stair.size.Length > 2) ? stair.size[2] * 0.5f : 1.5f;
+            float entryMargin = 1.0f + halfZ;
+            // Distance to wall in facing axis
+            float forwardDist = (Mathf.Abs(dir.z) >= Mathf.Abs(dir.x))
+                ? (dir.z > 0 ? (bounds.y - pos.z) : (bounds.y + pos.z))
+                : (dir.x > 0 ? (bounds.x - pos.x) : (bounds.x + pos.x));
+            if (forwardDist < entryMargin)
+            {
+                float push = entryMargin - forwardDist;
+                pos.x -= dir.x * push;
+                pos.z -= dir.z * push;
+            }
+
+            stair.position = new float[] { pos.x, pos.z, pos.y };
+        }
+    }
+
+    private Vector3 ToVec3Room(float[] pos)
+    {
+        float x = (pos != null && pos.Length > 0) ? pos[0] : 0f;
+        float z = (pos != null && pos.Length > 1) ? pos[1] : 0f;
+        float y = (pos != null && pos.Length > 2) ? pos[2] : 0f;
+        return new Vector3(x, y, z);
+    }
+
+    private struct HoleSpec
+    {
+        public Vector2 center;
+        public Vector2 size;
+    }
+
+    private class StairPlacement
+    {
+        public Stair stair;
+        public Vector3 position;
+        public Vector3 size;
+        public float fromY;
+        public float toY;
+    }
+
+    // ------------------------------------------------------------------------
     // Data classes for JSON
     // ------------------------------------------------------------------------
 
@@ -644,6 +1134,7 @@ public class AILevelGenerator : EditorWindow
         public string description;
         public float[] size;
         public float[] position;
+        public float[] rotation;
     }
 
     [Serializable]

@@ -6,103 +6,138 @@
         {
           "id": "hall",
           "type": "hall",
-          "size": [14, 10, 3],
+          "size": [18, 8, 3],
           "position": [0, 0, 0],
-          "windows": [
-            { "id": "win_h_left",  "size": [2,1.2,0.2], "position": [-7, 0, 1.2] },
-            { "id": "win_h_right", "size": [2,1.2,0.2], "position": [7, 0, 1.2] },
-            { "id": "win_h_top",   "size": [2,1.2,0.2], "position": [0, 5, 1.2] }
-          ],
           "doors": [
-            { "id": "door_h_b1", "from_room": "hall", "to_room": "bedroom_1", "size": [1,2,0.2], "position": [-7, 0, 0], "rotation": [0,0,0] },
-            { "id": "door_h_b2", "from_room": "hall", "to_room": "bedroom_2", "size": [1,2,0.2], "position": [7, 0, 0], "rotation": [0,0,0] },
-            { "id": "door_h_s",  "from_room": "hall", "to_room": "storage",  "size": [1,2,0.2], "position": [-4, -5, 0], "rotation": [0,0,0] },
-            { "id": "door_h_k",  "from_room": "hall", "to_room": "kitchen",  "size": [1,2,0.2], "position": [0, 5, 0], "rotation": [0,0,0] },
-            { "id": "door_h_t2", "from_room": "hall", "to_room": "toilet_2", "size": [1,2,0.2], "position": [0, -5, 0], "rotation": [0,0,0] }
-          ],
-          "roof": { "id": "roof_h", "size": [14,10,0.1], "position": [0,0,1.45], "rotation": [0,0,0] }
+            { "id": "door_h_k", "from_room": "hall", "to_room": "kitchen", "size": [1,2,0.2], "position": [0, 4, 0], "rotation": [0,0,0] },
+            { "id": "door_h_b2", "from_room": "hall", "to_room": "bedroom_2", "size": [1,2,0.2], "position": [-9, 0, 0], "rotation": [0,0,0] },
+            { "id": "door_h_b1", "from_room": "hall", "to_room": "bedroom_1", "size": [1,2,0.2], "position": [9, 0, 0], "rotation": [0,0,0] },
+            { "id": "door_h_bath1", "from_room": "hall", "to_room": "bathroom_1", "size": [1,2,0.2], "position": [0, -4, 0], "rotation": [0,0,0] }
+          ]
         },
 
         {
           "id": "kitchen",
           "type": "kitchen",
           "size": [10, 6, 3],
-          "position": [0, 8, 0],
-          "windows": [
-            { "id": "win_k_left",  "size": [2,1.2,0.2], "position": [-5, 0, 1.2] },
-            { "id": "win_k_right", "size": [2,1.2,0.2], "position": [5, 0, 1.2] }
-          ],
+          "position": [0, 9, 0],
           "doors": [
             { "id": "door_k_h", "from_room": "kitchen", "to_room": "hall", "size": [1,2,0.2], "position": [0, -3, 0], "rotation": [0,0,0] }
-          ],
-          "roof": { "id": "roof_k", "size": [10,6,0.1], "position": [0,0,1.45], "rotation": [0,0,0] }
-        },
-
-        {
-          "id": "bedroom_1",
-          "type": "bedroom",
-          "size": [8, 8, 3],
-          "position": [-11, 0, 0],
-          "windows": [
-            { "id": "win_b1_back", "size": [2,1.2,0.2], "position": [0, -4, 1.2] },
-            { "id": "win_b1_right", "size": [2,1.2,0.2], "position": [4, 0, 1.2] }
-          ],
-          "doors": [
-            { "id": "door_b1_h", "from_room": "bedroom_1", "to_room": "hall", "size": [1,2,0.2], "position": [4, 0, 0], "rotation": [0,0,0] },
-            { "id": "door_b1_t1", "from_room": "bedroom_1", "to_room": "toilet_1", "size": [1,2,0.2], "position": [0, 4, 0], "rotation": [0,0,0] }
-          ],
-          "roof": { "id": "roof_b1", "size": [8,8,0.1], "position": [0,0,1.45], "rotation": [0,0,0] }
-        },
-
-        {
-          "id": "toilet_1",
-          "type": "toilet",
-          "size": [4, 5, 3],
-          "position": [-11, 6.5, 0],
-          "doors": [
-            { "id": "door_t1_b1", "from_room": "toilet_1", "to_room": "bedroom_1", "size": [1,2,0.2], "position": [0, -2.5, 0], "rotation": [0,0,0] }
-          ],
-          "roof": { "id": "roof_t1", "size": [4,5,0.1], "position": [0,0,1.45], "rotation": [0,0,0] }
-        },
-
-        {
-          "id": "storage",
-          "type": "storage",
-          "size": [4, 6, 3],
-          "position": [-11, -8, 0],
-          "doors": [
-            { "id": "door_s_h", "from_room": "storage", "to_room": "hall", "size": [1,2,0.2], "position": [4, 3, 0], "rotation": [0,0,0] }
-          ],
-          "roof": { "id": "roof_s", "size": [4,6,0.1], "position": [0,0,1.45], "rotation": [0,0,0] }
-        },
-
-        {
-          "id": "toilet_2",
-          "type": "toilet",
-          "size": [5, 6, 3],
-          "position": [0, -10, 0],
-          "doors": [
-            { "id": "door_t2_h", "from_room": "toilet_2", "to_room": "hall", "size": [1,2,0.2], "position": [0, 3, 0], "rotation": [0,0,0] }
-          ],
-          "roof": { "id": "roof_t2", "size": [5,6,0.1], "position": [0,0,1.45], "rotation": [0,0,0] }
+          ]
         },
 
         {
           "id": "bedroom_2",
           "type": "bedroom",
           "size": [8, 8, 3],
-          "position": [11, 0, 0],
-          "windows": [
-            { "id": "win_b2_left", "size": [2,1.2,0.2], "position": [-4, 0, 1.2] },
-            { "id": "win_b2_back", "size": [2,1.2,0.2], "position": [0, -4, 1.2] }
-          ],
+          "position": [-12, 0, 0],
           "doors": [
-            { "id": "door_b2_h", "from_room": "bedroom_2", "to_room": "hall", "size": [1,2,0.2], "position": [-4, 0, 0], "rotation": [0,0,0] }
-          ],
-          "roof": { "id": "roof_b2", "size": [8,8,0.1], "position": [0,0,1.45], "rotation": [0,0,0] }
+            { "id": "door_b2_h", "from_room": "bedroom_2", "to_room": "hall", "size": [1,2,0.2], "position": [4, 0, 0], "rotation": [0,0,0] }
+          ]
+        },
+
+        {
+          "id": "bedroom_1",
+          "type": "bedroom",
+          "size": [8, 8, 3],
+          "position": [12, 0, 0],
+          "doors": [
+            { "id": "door_b1_h", "from_room": "bedroom_1", "to_room": "hall", "size": [1,2,0.2], "position": [-4, 0, 0], "rotation": [0,0,0] }
+          ]
+        },
+
+        {
+          "id": "bathroom_1",
+          "type": "bathroom",
+          "size": [4, 5, 3],
+          "position": [0, -9, 0],
+          "doors": [
+            { "id": "door_bath1_h", "from_room": "bathroom_1", "to_room": "hall", "size": [1,2,0.2], "position": [0, 2, 0], "rotation": [0,0,0] }
+          ]
+        }
+      ],
+      "connections": []
+    },
+
+    {
+      "id": "floor_2",
+      "rooms": [
+        {
+          "id": "hall_2",
+          "type": "hall",
+          "size": [18, 8, 3],
+          "position": [0, 0, 0],
+          "doors": [
+            { "id": "door_h2_k", "from_room": "hall_2", "to_room": "kitchen_2", "size": [1,2,0.2], "position": [0, 4, 0], "rotation": [0,0,0] },
+            { "id": "door_h2_b2", "from_room": "hall_2", "to_room": "bedroom_2_2", "size": [1,2,0.2], "position": [-9, 0, 0], "rotation": [0,0,0] },
+            { "id": "door_h2_b1", "from_room": "hall_2", "to_room": "bedroom_1_2", "size": [1,2,0.2], "position": [9, 0, 0], "rotation": [0,0,0] },
+            { "id": "door_h2_bath2", "from_room": "hall_2", "to_room": "bathroom_2", "size": [1,2,0.2], "position": [-3, -4, 0], "rotation": [0,0,0] },
+            { "id": "door_h2_bath3", "from_room": "hall_2", "to_room": "bathroom_3", "size": [1,2,0.2], "position": [3, -4, 0], "rotation": [0,0,0] }
+          ]
+        },
+
+        {
+          "id": "kitchen_2",
+          "type": "kitchen",
+          "size": [10, 6, 3],
+          "position": [0, 9, 0],
+          "doors": [
+            { "id": "door_k2_h2", "from_room": "kitchen_2", "to_room": "hall_2", "size": [1,2,0.2], "position": [0, -3, 0], "rotation": [0,0,0] }
+          ]
+        },
+
+        {
+          "id": "bedroom_2_2",
+          "type": "bedroom",
+          "size": [8, 8, 3],
+          "position": [-12, 0, 0],
+          "doors": [
+            { "id": "door_b2_2_h2", "from_room": "bedroom_2_2", "to_room": "hall_2", "size": [1,2,0.2], "position": [4, 0, 0], "rotation": [0,0,0] }
+          ]
+        },
+
+        {
+          "id": "bedroom_1_2",
+          "type": "bedroom",
+          "size": [8, 8, 3],
+          "position": [12, 0, 0],
+          "doors": [
+            { "id": "door_b1_2_h2", "from_room": "bedroom_1_2", "to_room": "hall_2", "size": [1,2,0.2], "position": [-4, 0, 0], "rotation": [0,0,0] }
+          ]
+        },
+
+        {
+          "id": "bathroom_2",
+          "type": "bathroom",
+          "size": [4, 5, 3],
+          "position": [-4, -9, 0],
+          "doors": [
+            { "id": "door_bath2_h2", "from_room": "bathroom_2", "to_room": "hall_2", "size": [1,2,0.2], "position": [0, 2, 0], "rotation": [0,0,0] }
+          ]
+        },
+
+        {
+          "id": "bathroom_3",
+          "type": "bathroom",
+          "size": [4, 5, 3],
+          "position": [4, -9, 0],
+          "doors": [
+            { "id": "door_bath3_h2", "from_room": "bathroom_3", "to_room": "hall_2", "size": [1,2,0.2], "position": [0, 2, 0], "rotation": [0,0,0] }
+          ]
         }
       ],
       "connections": []
     }
-  ]
+  ],
+"stairs": [
+  {
+    "description": "stairs_1_to_2",
+    "floor_from": "floor_1",
+    "floor_to": "floor_2",
+    "size": [2, 2,0],
+    "position": [8, 5, 0],
+    "rotation": [0, 90, 0]
+  }
+]
+
 }
