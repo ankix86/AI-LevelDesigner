@@ -37,14 +37,14 @@ namespace AILevelDesign
             return CreateRoomComposite(name, position, size, DefaultWallThickness, DefaultFloorThickness);
         }
 
-        public static GameObject CreateStairs(string name, Vector3 position, Vector3 size)
+        public static GameObject CreateStairs(string name, Vector3 position, Vector3 size, Material material = null)
         {
-            return CreateCubeShape(name, position, size, Quaternion.identity, null);
+            return CreateCubeShape(name, position, size, Quaternion.identity, null, material);
         }
 
-        public static GameObject CreateElement(string name, Vector3 position, Vector3 size, Quaternion rotation, Transform parent = null)
+        public static GameObject CreateElement(string name, Vector3 position, Vector3 size, Quaternion rotation, Transform parent = null, Material material = null)
         {
-            return CreateCubeShape(name, position, size, rotation, parent);
+            return CreateCubeShape(name, position, size, rotation, parent, material);
         }
 
         /// <summary>
@@ -57,7 +57,8 @@ namespace AILevelDesign
             float thickness,
             WallAxis axis,
             Transform parent,
-            Opening[] openings)
+            Opening[] openings,
+            Material material = null)
         {
             if (openings == null)
                 openings = Array.Empty<Opening>();
@@ -114,33 +115,54 @@ namespace AILevelDesign
                         segPos = new Vector3(0f, 0f, cursor + segLen * 0.5f);
                     }
 
-                    CreateCubeShape($"Seg_{segmentIndex++}", segPos, segSize, Quaternion.identity, wallParent.transform);
+                    CreateCubeShape($"Seg_{segmentIndex++}", segPos, segSize, Quaternion.identity, wallParent.transform, material);
                 }
 
                 // ------------------------------
-                // FIXED HEADER (NEW)
-                // Always exactly 1 unit high
+                // Vertical fills: sill (below opening) and header (above opening)
                 // ------------------------------
                 float openingBottomLocalY = -halfHeight + baseY;
                 float openingTopLocalY = openingBottomLocalY + opHeight;
 
-                float headerHeight = 1f;   // FIXED
-                float headerLocalY = 1f;   // Y = 1 always
-
-                Vector3 headerSize, headerPos;
-
-                if (axis == WallAxis.X)
+                float sillHeight = Mathf.Max(baseY, 0f);
+                if (sillHeight > 0.001f)
                 {
-                    headerSize = new Vector3(opWidth, headerHeight, depth);
-                    headerPos = new Vector3(opCenter, headerLocalY, 0f);
-                }
-                else
-                {
-                    headerSize = new Vector3(depth, headerHeight, opWidth);
-                    headerPos = new Vector3(0f, headerLocalY, opCenter);
+                    float sillCenterY = -halfHeight + sillHeight * 0.5f;
+                    Vector3 sillSize, sillPos;
+
+                    if (axis == WallAxis.X)
+                    {
+                        sillSize = new Vector3(opWidth, sillHeight, depth);
+                        sillPos = new Vector3(opCenter, sillCenterY, 0f);
+                    }
+                    else
+                    {
+                        sillSize = new Vector3(depth, sillHeight, opWidth);
+                        sillPos = new Vector3(0f, sillCenterY, opCenter);
+                    }
+
+                    CreateCubeShape($"Sill_{segmentIndex++}", sillPos, sillSize, Quaternion.identity, wallParent.transform, material);
                 }
 
-                CreateCubeShape($"Header_{segmentIndex++}", headerPos, headerSize, Quaternion.identity, wallParent.transform);
+                float headerHeight = Mathf.Max(halfHeight - openingTopLocalY, 0f);
+                if (headerHeight > 0.001f)
+                {
+                    float headerCenterY = openingTopLocalY + headerHeight * 0.5f;
+                    Vector3 headerSize, headerPos;
+
+                    if (axis == WallAxis.X)
+                    {
+                        headerSize = new Vector3(opWidth, headerHeight, depth);
+                        headerPos = new Vector3(opCenter, headerCenterY, 0f);
+                    }
+                    else
+                    {
+                        headerSize = new Vector3(depth, headerHeight, opWidth);
+                        headerPos = new Vector3(0f, headerCenterY, opCenter);
+                    }
+
+                    CreateCubeShape($"Header_{segmentIndex++}", headerPos, headerSize, Quaternion.identity, wallParent.transform, material);
+                }
 
                 // ------------------------------
                 // UPDATE CURSOR AFTER OPENING
@@ -167,7 +189,7 @@ namespace AILevelDesign
                     segPos = new Vector3(0f, 0f, cursor + segLen * 0.5f);
                 }
 
-                CreateCubeShape($"Seg_{segmentIndex++}", segPos, segSize, Quaternion.identity, wallParent.transform);
+                CreateCubeShape($"Seg_{segmentIndex++}", segPos, segSize, Quaternion.identity, wallParent.transform, material);
             }
 
 #if UNITY_EDITOR
@@ -214,7 +236,7 @@ namespace AILevelDesign
             return parent;
         }
 
-        private static GameObject CreateCubeShape(string name, Vector3 position, Vector3 size, Quaternion rotation, Transform parent)
+        private static GameObject CreateCubeShape(string name, Vector3 position, Vector3 size, Quaternion rotation, Transform parent, Material material = null)
         {
             ProBuilderMesh mesh = ShapeFactory.Instantiate<Cube>();
             if (parent != null)
@@ -240,6 +262,11 @@ namespace AILevelDesign
 
             var mf = mesh.GetComponent<MeshFilter>();
             collider.sharedMesh = mf != null ? mf.sharedMesh : null;
+
+            if (material != null && mesh.TryGetComponent<MeshRenderer>(out var renderer))
+            {
+                renderer.sharedMaterial = material;
+            }
 
 #if UNITY_EDITOR
             Undo.RegisterCreatedObjectUndo(mesh.gameObject, $"Create {mesh.gameObject.name}");

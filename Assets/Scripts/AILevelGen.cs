@@ -14,8 +14,13 @@ public class AILevelGenerator : EditorWindow
     private float defaultStairHeight = 3f;
     private const float defaultWallThickness = 0.1f;
     private const float defaultSlabThickness = 0.1f;
-    private bool autoDoorInference = true; // kept for compat (not heavily used now)
     private Vector2 scroll;
+
+    [Header("Default Materials (optional)")]
+    public Material wallMaterial;
+    public Material floorMaterial;
+    public Material roofMaterial;
+    public Material stairMaterial;
 
     [MenuItem("Tools/AI Level Generator")]
     public static void ShowWindow()
@@ -43,7 +48,12 @@ public class AILevelGenerator : EditorWindow
         EditorGUILayout.LabelField("Defaults", EditorStyles.boldLabel);
         defaultRoomHeight = EditorGUILayout.FloatField("Room Height (Y)", defaultRoomHeight);
         defaultStairHeight = EditorGUILayout.FloatField("Stair Height (Y)", defaultStairHeight);
-        autoDoorInference = EditorGUILayout.Toggle("Auto Door World->Local (legacy)", autoDoorInference);
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField("Materials (optional)", EditorStyles.boldLabel);
+        wallMaterial = (Material)EditorGUILayout.ObjectField("Wall Material", wallMaterial, typeof(Material), false);
+        floorMaterial = (Material)EditorGUILayout.ObjectField("Floor Material", floorMaterial, typeof(Material), false);
+        roofMaterial = (Material)EditorGUILayout.ObjectField("Roof Material", roofMaterial, typeof(Material), false);
+        stairMaterial = (Material)EditorGUILayout.ObjectField("Stair Material", stairMaterial, typeof(Material), false);
 
         EditorGUILayout.Space();
         if (GUILayout.Button("Generate Level", GUILayout.Height(32)))
@@ -129,7 +139,7 @@ public class AILevelGenerator : EditorWindow
                             Vector3 size = SanitizeSize(room.floor.size, defaultY: 0.1f, defaultX: roomSize.x, defaultZ: roomSize.z);
                             Vector3 pos = SnapVector(ToPosition(room.floor.position, new Vector3(0f, -roomSize.y * 0.5f + size.y * 0.5f, 0f)));
                             Quaternion rot = ToRotation(room.floor.rotation);
-                            PBHelper.CreateElement(string.IsNullOrEmpty(room.floor.id) ? "Floor" : room.floor.id, pos, size, rot, roomRoot.transform);
+                            PBHelper.CreateElement(string.IsNullOrEmpty(room.floor.id) ? "Floor" : room.floor.id, pos, size, rot, roomRoot.transform, floorMaterial);
                         }
                         // Roof
                         if (hasCustomRoof)
@@ -145,7 +155,7 @@ public class AILevelGenerator : EditorWindow
                                 Vector3 size = SanitizeSize(wall.size, defaultY: defaultRoomHeight, defaultX: 0.1f, defaultZ: 0.1f);
                                 Vector3 pos = SnapVector(ToPosition(wall.position));
                                 Quaternion rot = ToRotation(wall.rotation);
-                                PBHelper.CreateElement(string.IsNullOrEmpty(wall.id) ? $"Wall_{w}" : wall.id, pos, size, rot, roomRoot.transform);
+                                PBHelper.CreateElement(string.IsNullOrEmpty(wall.id) ? $"Wall_{w}" : wall.id, pos, size, rot, roomRoot.transform, wallMaterial);
                             }
                         }
 
@@ -184,7 +194,7 @@ public class AILevelGenerator : EditorWindow
             {
                 Vector3 size = ToSize(stair.size, defaultStairHeight, 1f, 1f);
                 Vector3 pos = ToPosition(stair.position);
-                PBHelper.CreateStairs(string.IsNullOrEmpty(stair.description) ? "Stairs" : stair.description, pos, size);
+                PBHelper.CreateStairs(string.IsNullOrEmpty(stair.description) ? "Stairs" : stair.description, pos, size, stairMaterial);
             }
         }
 
@@ -207,7 +217,7 @@ public class AILevelGenerator : EditorWindow
         // Floor
         Vector3 floorSize = new Vector3(roomSize.x, defaultSlabThickness, roomSize.z);
         Vector3 floorPos = new Vector3(0f, -halfY + floorSize.y * 0.5f, 0f);
-        PBHelper.CreateElement("Floor", floorPos, floorSize, Quaternion.identity, roomRoot.transform);
+        PBHelper.CreateElement("Floor", floorPos, floorSize, Quaternion.identity, roomRoot.transform, floorMaterial);
 
         // Openings per wall
         List<PBHelper.Opening> frontOpenings = new List<PBHelper.Opening>();
@@ -215,70 +225,20 @@ public class AILevelGenerator : EditorWindow
         List<PBHelper.Opening> rightOpenings = new List<PBHelper.Opening>();
         List<PBHelper.Opening> leftOpenings = new List<PBHelper.Opening>();
 
+        // Doors -> openings
         if (room.doors != null)
         {
             foreach (var door in room.doors)
             {
-                Vector3 doorSize = SanitizeSize(door.size, defaultY: 2.0f, defaultX: 1.0f, defaultZ: 0.3f);
-
-                // Interpret JSON door.position as:
-                // [xLocalFromCenter, zLocalFromCenter, yFromFloorCenter]
-                float dx = 0f, dz = 0f;
-                if (door.position != null && door.position.Length > 0) dx = door.position[0];
-                if (door.position != null && door.position.Length > 1) dz = door.position[1];
-
-                // door.position[2] is door bottom (not center)
-                float bottomY = 0f;
-                if (door.position != null && door.position.Length > 2)
-                    bottomY = door.position[2];
-
-                float centerFromFloor = bottomY + doorSize.y * 0.5f;
-
-                // Local center position in room coordinates
-                Vector3 localPos = new Vector3(dx, -halfY + centerFromFloor, dz);
-
-                // Compute baseY (distance from floor to bottom of opening)
-                float baseY = Mathf.Clamp(centerFromFloor - doorSize.y * 0.5f, 0f, roomSize.y - doorSize.y);
-
-                // Determine nearest wall
-                float distFront = Mathf.Abs(localPos.z - (halfZ - defaultWallThickness * 0.5f));
-                float distBack = Mathf.Abs(localPos.z + (halfZ - defaultWallThickness * 0.5f));
-                float distRight = Mathf.Abs(localPos.x - (halfX - defaultWallThickness * 0.5f));
-                float distLeft = Mathf.Abs(localPos.x + (halfX - defaultWallThickness * 0.5f));
-
-                float min = Mathf.Min(distFront, distBack, distRight, distLeft);
-
-                PBHelper.Opening opening = new PBHelper.Opening
-                {
-                    width = doorSize.x,
-                    height = doorSize.y,
-                    baseY = baseY
-                };
-
-                if (min == distFront)
-                {
-                    // Front wall (z = +halfZ)
-                    opening.center = Mathf.Clamp(localPos.x, -halfX + opening.width * 0.5f, halfX - opening.width * 0.5f);
-                    frontOpenings.Add(opening);
-                }
-                else if (min == distBack)
-                {
-                    // Back wall (z = -halfZ)
-                    opening.center = Mathf.Clamp(localPos.x, -halfX + opening.width * 0.5f, halfX - opening.width * 0.5f);
-                    backOpenings.Add(opening);
-                }
-                else if (min == distRight)
-                {
-                    // Right wall (x = +halfX)
-                    opening.center = Mathf.Clamp(localPos.z, -halfZ + opening.width * 0.5f, halfZ - opening.width * 0.5f);
-                    rightOpenings.Add(opening);
-                }
-                else
-                {
-                    // Left wall (x = -halfX)
-                    opening.center = Mathf.Clamp(localPos.z, -halfZ + opening.width * 0.5f, halfZ - opening.width * 0.5f);
-                    leftOpenings.Add(opening);
-                }
+                AddOpeningFromRect(roomSize, door.size, door.position, halfX, halfZ, defaultWallThickness, frontOpenings, backOpenings, rightOpenings, leftOpenings, false);
+            }
+        }
+        // Windows -> openings
+        if (room.windows != null)
+        {
+            foreach (var window in room.windows)
+            {
+                AddOpeningFromRect(roomSize, window.size, window.position, halfX, halfZ, defaultWallThickness, frontOpenings, backOpenings, rightOpenings, leftOpenings, true, defaultHeight: 1.2f, defaultWidth: 1.5f);
             }
         }
 
@@ -293,7 +253,8 @@ public class AILevelGenerator : EditorWindow
             defaultWallThickness,
             PBHelper.WallAxis.X,
             roomRoot.transform,
-            frontOpenings.ToArray());
+            frontOpenings.ToArray(),
+            wallMaterial);
         front.transform.localPosition = new Vector3(0f, 0f, halfZ - defaultWallThickness * 0.5f);
 
         // Back
@@ -303,7 +264,8 @@ public class AILevelGenerator : EditorWindow
             defaultWallThickness,
             PBHelper.WallAxis.X,
             roomRoot.transform,
-            backOpenings.ToArray());
+            backOpenings.ToArray(),
+            wallMaterial);
         back.transform.localPosition = new Vector3(0f, 0f, -halfZ + defaultWallThickness * 0.5f);
 
         // Right
@@ -313,7 +275,8 @@ public class AILevelGenerator : EditorWindow
             defaultWallThickness,
             PBHelper.WallAxis.Z,
             roomRoot.transform,
-            rightOpenings.ToArray());
+            rightOpenings.ToArray(),
+            wallMaterial);
         right.transform.localPosition = new Vector3(halfX - defaultWallThickness * 0.5f, 0f, 0f);
 
         // Left
@@ -323,13 +286,115 @@ public class AILevelGenerator : EditorWindow
             defaultWallThickness,
             PBHelper.WallAxis.Z,
             roomRoot.transform,
-            leftOpenings.ToArray());
+            leftOpenings.ToArray(),
+            wallMaterial);
         left.transform.localPosition = new Vector3(-halfX + defaultWallThickness * 0.5f, 0f, 0f);
     }
 
     // ------------------------------------------------------------------------
     // Utility conversions
     // ------------------------------------------------------------------------
+
+    private void AddOpeningFromRect(
+        Vector3 roomSize,
+        float[] sizeArr,
+        float[] posArr,
+        float halfX,
+        float halfZ,
+        float wallThickness,
+        List<PBHelper.Opening> frontOpenings,
+        List<PBHelper.Opening> backOpenings,
+        List<PBHelper.Opening> rightOpenings,
+        List<PBHelper.Opening> leftOpenings,
+        bool isWindow,
+        float defaultHeight = 2.0f,
+        float defaultWidth = 1.0f)
+    {
+        // For windows, scale default width relative to room span (larger rooms get wider windows)
+        float dynamicDefaultWidth = defaultWidth;
+        if (isWindow)
+        {
+            float maxSpan = Mathf.Max(roomSize.x, roomSize.z);
+            dynamicDefaultWidth = Mathf.Clamp(maxSpan * 0.25f, 1.2f, 2.5f);
+        }
+
+        // Interpret size as [width, height, thickness] for doors/windows
+        float width = (sizeArr != null && sizeArr.Length > 0) ? sizeArr[0] : dynamicDefaultWidth;
+        float height = (sizeArr != null && sizeArr.Length > 1) ? sizeArr[1] : defaultHeight;
+        float thickness = (sizeArr != null && sizeArr.Length > 2) ? sizeArr[2] : 0.3f;
+        Vector3 rectSize = SanitizeSize(new float[] { width, thickness, height }, defaultY: height, defaultX: width, defaultZ: thickness);
+
+        float dx = (posArr != null && posArr.Length > 0) ? posArr[0] : 0f;
+        float dz = (posArr != null && posArr.Length > 1) ? posArr[1] : 0f;
+        float bottomY = (posArr != null && posArr.Length > 2) ? posArr[2] : 0f;
+
+        float centerFromFloor = bottomY + rectSize.y * 0.5f;
+
+        float halfY = roomSize.y * 0.5f;
+        Vector3 localPos = new Vector3(dx, -halfY + centerFromFloor, dz);
+
+        float baseY = Mathf.Clamp(centerFromFloor - rectSize.y * 0.5f, 0f, roomSize.y - rectSize.y);
+
+        float distFront = Mathf.Abs(localPos.z - (halfZ - wallThickness * 0.5f));
+        float distBack = Mathf.Abs(localPos.z + (halfZ - wallThickness * 0.5f));
+        float distRight = Mathf.Abs(localPos.x - (halfX - wallThickness * 0.5f));
+        float distLeft = Mathf.Abs(localPos.x + (halfX - wallThickness * 0.5f));
+
+        float min = Mathf.Min(distFront, distBack, distRight, distLeft);
+
+        PBHelper.Opening opening = new PBHelper.Opening
+        {
+            width = rectSize.x,
+            height = rectSize.y,
+            baseY = baseY
+        };
+
+        List<PBHelper.Opening> targetList = null;
+        float spanHalf = halfX;
+
+        if (min == distFront)
+        {
+            opening.center = Mathf.Clamp(localPos.x, -halfX + opening.width * 0.5f, halfX - opening.width * 0.5f);
+            targetList = frontOpenings;
+            spanHalf = halfX;
+        }
+        else if (min == distBack)
+        {
+            opening.center = Mathf.Clamp(localPos.x, -halfX + opening.width * 0.5f, halfX - opening.width * 0.5f);
+            targetList = backOpenings;
+            spanHalf = halfX;
+        }
+        else if (min == distRight)
+        {
+            opening.center = Mathf.Clamp(localPos.z, -halfZ + opening.width * 0.5f, halfZ - opening.width * 0.5f);
+            targetList = rightOpenings;
+            spanHalf = halfZ;
+        }
+        else
+        {
+            opening.center = Mathf.Clamp(localPos.z, -halfZ + opening.width * 0.5f, halfZ - opening.width * 0.5f);
+            targetList = leftOpenings;
+            spanHalf = halfZ;
+        }
+
+        if (targetList == null)
+            return;
+
+        // Skip if overlapping an existing opening on the same wall (door/window conflict)
+        float newMin = opening.center - opening.width * 0.5f;
+        float newMax = opening.center + opening.width * 0.5f;
+        foreach (var op in targetList)
+        {
+            float existingMin = op.center - op.width * 0.5f;
+            float existingMax = op.center + op.width * 0.5f;
+            if (!(newMax <= existingMin || newMin >= existingMax))
+            {
+                return; // overlap -> skip this opening
+            }
+        }
+
+        targetList.Add(opening);
+    }
 
     private Vector3 ToRoomPosition(float[] pos)
     {
@@ -533,7 +598,7 @@ public class AILevelGenerator : EditorWindow
         Vector3 size = SanitizeSize(room.roof.size, defaultY: 0.1f, defaultX: roomSize.x, defaultZ: roomSize.z);
         Vector3 pos = SnapVector(ToPosition(room.roof.position, new Vector3(0f, roomSize.y * 0.5f - size.y * 0.5f, 0f)));
         Quaternion rot = ToRotation(room.roof.rotation);
-        PBHelper.CreateElement(string.IsNullOrEmpty(room.roof.id) ? "Roof" : room.roof.id, pos, size, rot, roomRoot.transform);
+        PBHelper.CreateElement(string.IsNullOrEmpty(room.roof.id) ? "Roof" : room.roof.id, pos, size, rot, roomRoot.transform, roofMaterial);
     }
 
     // ------------------------------------------------------------------------
@@ -568,6 +633,7 @@ public class AILevelGenerator : EditorWindow
         public Element roof;
         public Element[] walls;
         public Door[] doors;
+        public Window[] windows;
     }
 
     [Serializable]
@@ -599,6 +665,15 @@ public class AILevelGenerator : EditorWindow
         public float[] size;      // [width, height, thickness]
         public float[] position;  // [xLocal, zLocal, yFromFloorCenter]
         public float[] rotation;
+    }
+
+    [Serializable]
+    private class Window
+    {
+        public string id;
+        public float[] size;      // [width, height, thickness]
+        public float[] position;  // [xLocal, zLocal, yFromFloorCenter]
+        public float[] rotation;  // unused for auto walls, kept for schema symmetry
     }
 
     [Serializable]
