@@ -103,7 +103,8 @@ public class AILevelGenerator : EditorWindow
                 foreach (Room room in floor.rooms)
                 {
                     Vector3 roomSize = ToSize(room.size, defaultRoomHeight);
-                    Vector3 roomPos = SnapVector(ToRoomPosition(room.position));
+                    // Rooms start at origin; connectors will reposition/rotate them automatically.
+                    Vector3 roomPos = Vector3.zero;
                     GameObject roomRoot = new GameObject(string.IsNullOrEmpty(room.id) ? "Room" : room.id);
                     roomRoot.transform.position = roomPos;
 
@@ -330,12 +331,10 @@ public class AILevelGenerator : EditorWindow
     // Utility conversions
     // ------------------------------------------------------------------------
 
-    // For rooms: position is [x, z, y] but we only care about x,z and set y=0 (center).
     private Vector3 ToRoomPosition(float[] pos)
     {
-        float x = (pos != null && pos.Length > 0) ? pos[0] : 0f;
-        float z = (pos != null && pos.Length > 1) ? pos[1] : 0f;
-        return new Vector3(x, 0f, z);
+        // Room position from JSON is intentionally ignored; auto-aligner will place rooms.
+        return Vector3.zero;
     }
 
     private Vector3 ToPosition(float[] pos)
@@ -426,13 +425,13 @@ public class AILevelGenerator : EditorWindow
                     if (string.IsNullOrEmpty(connectionId))
                         continue;
 
-                    if (!TryComputeDoorConnectorLocal(roomSize, door, out Vector3 localPos))
+                    if (!TryComputeDoorConnectorLocal(roomSize, door, out Vector3 localPos, out Vector3 localNormal))
                         continue;
 
                     bool isAnchor = !anchorAssigned.Contains(connectionId);
                     if (isAnchor) anchorAssigned.Add(connectionId);
 
-                    CreateInvisibleConnector(roomRoot.transform, connectionId, localPos, isAnchor);
+                    CreateInvisibleConnector(roomRoot.transform, connectionId, localPos, localNormal, isAnchor);
                     created++;
                 }
             }
@@ -453,11 +452,14 @@ public class AILevelGenerator : EditorWindow
             : $"{second}__{first}";
     }
 
-    private void CreateInvisibleConnector(Transform parent, string connectorId, Vector3 localPos, bool isAnchor)
+    private void CreateInvisibleConnector(Transform parent, string connectorId, Vector3 localPos, Vector3 localNormal, bool isAnchor)
     {
         GameObject go = new GameObject($"InvisibleObjectConnector ({connectorId})");
         go.transform.SetParent(parent, false);
         go.transform.localPosition = localPos;
+        if (localNormal.sqrMagnitude < 1e-6f)
+            localNormal = Vector3.forward;
+        go.transform.localRotation = Quaternion.LookRotation(localNormal, Vector3.up);
 
         InvisibleConnector connector = go.AddComponent<InvisibleConnector>();
         connector.connectorId = connectorId;
@@ -465,9 +467,10 @@ public class AILevelGenerator : EditorWindow
         connector.isAnchor = isAnchor;
     }
 
-    private bool TryComputeDoorConnectorLocal(Vector3 roomSize, Door door, out Vector3 localPos)
+    private bool TryComputeDoorConnectorLocal(Vector3 roomSize, Door door, out Vector3 localPos, out Vector3 localNormal)
     {
         localPos = Vector3.zero;
+        localNormal = Vector3.forward;
         if (door == null)
             return false;
 
@@ -496,6 +499,7 @@ public class AILevelGenerator : EditorWindow
         {
             float clampedX = Mathf.Clamp(localCenter.x, -halfX + doorSize.x * 0.5f, halfX - doorSize.x * 0.5f);
             localPos = new Vector3(clampedX, localCenter.y, halfZ);
+            localNormal = Vector3.forward;
             return true;
         }
 
@@ -503,6 +507,7 @@ public class AILevelGenerator : EditorWindow
         {
             float clampedX = Mathf.Clamp(localCenter.x, -halfX + doorSize.x * 0.5f, halfX - doorSize.x * 0.5f);
             localPos = new Vector3(clampedX, localCenter.y, -halfZ);
+            localNormal = Vector3.back;
             return true;
         }
 
@@ -510,11 +515,13 @@ public class AILevelGenerator : EditorWindow
         {
             float clampedZ = Mathf.Clamp(localCenter.z, -halfZ + doorSize.x * 0.5f, halfZ - doorSize.x * 0.5f);
             localPos = new Vector3(halfX, localCenter.y, clampedZ);
+            localNormal = Vector3.right;
             return true;
         }
 
         float clampedZLeft = Mathf.Clamp(localCenter.z, -halfZ + doorSize.x * 0.5f, halfZ - doorSize.x * 0.5f);
         localPos = new Vector3(-halfX, localCenter.y, clampedZLeft);
+        localNormal = Vector3.left;
         return true;
     }
 

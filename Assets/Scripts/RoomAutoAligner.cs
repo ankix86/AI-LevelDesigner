@@ -51,7 +51,7 @@ public static class RoomAutoAligner
                 continue;
 
             Vector3 anchorPos = anchor.transform.position;
-            Vector3 anchorNormal = GuessConnectorNormal(anchor.transform, anchorRoomRoot);
+            Vector3 anchorForward = anchor.transform.forward;
 
             foreach (var c in list)
             {
@@ -62,24 +62,8 @@ public static class RoomAutoAligner
                 if (roomRoot == null || roomRoot == anchorRoomRoot)
                     continue;
 
-                // Offset needed to bring this connector to anchor position
-                Vector3 delta = anchorPos - c.transform.position;
-
-                switch (c.connectorType)
-                {
-                    case ConnectorType.Room:
-                    case ConnectorType.Door:
-                    case ConnectorType.Custom:
-                        // For now: simple translation. Later you can add rotation logic here.
-                        roomRoot.position += delta;
-                        break;
-
-                    case ConnectorType.Window:
-                    case ConnectorType.Plumbing:
-                        // Reserved for future specialized behavior.
-                        roomRoot.position += delta;
-                        break;
-                }
+                // Rotate/translate room so this connector faces and snaps to the anchor
+                AlignRoomToAnchor(anchorPos, anchorForward, c, roomRoot, wallThickness);
             }
         }
     }
@@ -93,21 +77,41 @@ public static class RoomAutoAligner
         return t;
     }
 
-    private static Vector3 GuessConnectorNormal(Transform connector, Transform roomRoot)
+    /// <summary>
+    /// Rotate/translate target room so its connector forward looks at the anchor connector,
+    /// then snap with a small pull-back to avoid wall overlap.
+    /// </summary>
+    private static void AlignRoomToAnchor(
+        Vector3 anchorPos,
+        Vector3 anchorForward,
+        InvisibleConnector targetConnector,
+        Transform targetRoomRoot,
+        float wallThickness)
     {
-        Vector3 localPos = roomRoot.InverseTransformPoint(connector.position);
+        // 1) Forward from connector (defined when created; outward normal of wall)
+        Vector3 targetForward = targetConnector.transform.forward;
+        Vector3 targetForwardXZ = new Vector3(targetForward.x, 0f, targetForward.z);
+        if (targetForwardXZ.sqrMagnitude < 1e-6f)
+            targetForwardXZ = Vector3.forward;
+        targetForwardXZ.Normalize();
 
-        if (Mathf.Abs(localPos.x) >= Mathf.Abs(localPos.z))
-        {
-            float sign = Mathf.Sign(localPos.x);
-            if (Mathf.Approximately(sign, 0f)) sign = 1f;
-            return roomRoot.TransformDirection(new Vector3(sign, 0f, 0f));
-        }
-        else
-        {
-            float sign = Mathf.Sign(localPos.z);
-            if (Mathf.Approximately(sign, 0f)) sign = 1f;
-            return roomRoot.TransformDirection(new Vector3(0f, 0f, sign));
-        }
+        // 2) Use anchor forward to align opposing faces
+        Vector3 anchorForwardXZ = new Vector3(anchorForward.x, 0f, anchorForward.z);
+        if (anchorForwardXZ.sqrMagnitude < 1e-6f)
+            anchorForwardXZ = Vector3.forward;
+        anchorForwardXZ.Normalize();
+
+        // 3) Yaw so target forward faces opposite of anchor forward (outward vs inward)
+        float angle = Vector3.SignedAngle(targetForwardXZ, -anchorForwardXZ, Vector3.up);
+        Quaternion toFacing = Quaternion.AngleAxis(angle, Vector3.up);
+        Vector3 pivot = targetConnector.transform.position;
+
+        targetRoomRoot.position = pivot + toFacing * (targetRoomRoot.position - pivot);
+        targetRoomRoot.rotation = toFacing * targetRoomRoot.rotation;
+
+        // 4) Snap with small separation to avoid wall overlap
+        Vector3 desiredConnectorPos = anchorPos - anchorForwardXZ * (wallThickness * 0.5f);
+        Vector3 delta = desiredConnectorPos - targetConnector.transform.position;
+        targetRoomRoot.position += delta;
     }
 }
