@@ -92,6 +92,8 @@ public class AILevelGenerator : EditorWindow
     private void BuildLevel(LevelData data)
     {
         Dictionary<string, GameObject> roomLookup = new Dictionary<string, GameObject>();
+        List<string> roomIssues = new List<string>();
+        int roomIndex = 0;
 
         if (data.floors != null)
         {
@@ -101,9 +103,24 @@ public class AILevelGenerator : EditorWindow
 
                 foreach (Room room in floor.rooms)
                 {
+                    string resolvedId = room.id;
+                    if (string.IsNullOrEmpty(resolvedId))
+                    {
+                        resolvedId = $"Room_{roomIndex}";
+                        Debug.LogWarning($"AI Level Generator: Room at index {roomIndex} is missing an id; using fallback '{resolvedId}'.");
+                        roomIssues.Add($"Missing id -> {resolvedId}");
+                    }
+                    else if (roomLookup.ContainsKey(resolvedId))
+                    {
+                        string renamedId = $"{resolvedId}_{roomIndex}";
+                        Debug.LogWarning($"AI Level Generator: Duplicate room id '{resolvedId}' detected; renaming to '{renamedId}'.");
+                        roomIssues.Add($"Duplicate '{resolvedId}' renamed to '{renamedId}'");
+                        resolvedId = renamedId;
+                    }
+
                     Vector3 roomSize = ToSize(room.size, defaultRoomHeight);
                     Vector3 roomPos = SnapVector(ToRoomPosition(room.position));
-                    GameObject roomRoot = new GameObject(string.IsNullOrEmpty(room.id) ? "Room" : room.id);
+                    GameObject roomRoot = new GameObject(resolvedId);
                     roomRoot.transform.position = roomPos;
 
                     bool hasCustom = (room.floor != null) || (room.roof != null) ||
@@ -112,7 +129,7 @@ public class AILevelGenerator : EditorWindow
                     if (!hasCustom)
                     {
                         BuildAutoRoomWithOpenings(room, roomRoot, roomSize);
-                        roomLookup[room.id] = roomRoot;
+                        roomLookup[resolvedId] = roomRoot;
                     }
                     else
                     {
@@ -145,8 +162,10 @@ public class AILevelGenerator : EditorWindow
                             }
                         }
 
-                        roomLookup[room.id] = roomRoot;
+                        roomLookup[resolvedId] = roomRoot;
                     }
+
+                    roomIndex++;
                 }
 
                 // Floor-level props and free doors (rare; you mostly use room doors)
@@ -184,7 +203,8 @@ public class AILevelGenerator : EditorWindow
             }
         }
 
-        Debug.Log($"AI Level Generator: Created {roomLookup.Count} rooms and {(data.stairs?.Length ?? 0)} stairs.");
+        string issueSummary = roomIssues.Count > 0 ? $" Issues: {string.Join(", ", roomIssues)}" : string.Empty;
+        Debug.Log($"AI Level Generator: Created {roomLookup.Count} rooms and {(data.stairs?.Length ?? 0)} stairs.{issueSummary}");
     }
 
     // ------------------------------------------------------------------------
