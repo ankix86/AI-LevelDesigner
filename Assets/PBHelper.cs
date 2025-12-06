@@ -22,25 +22,10 @@ namespace AILevelDesign
 
         public struct Opening
         {
-            /// <summary>
-            /// Position along the wall's length (X for WallAxis.X, Z for WallAxis.Z), centered at 0.
-            /// </summary>
-            public float center;
-
-            /// <summary>
-            /// Width of the opening along the wall's length.
-            /// </summary>
-            public float width;
-
-            /// <summary>
-            /// Height of the opening.
-            /// </summary>
-            public float height;
-
-            /// <summary>
-            /// Distance from floor (bottom of wall) to bottom of opening.
-            /// </summary>
-            public float baseY;
+            public float center; // Position along wall
+            public float width;  // Opening width
+            public float height; // Opening height
+            public float baseY;  // Distance from floor to bottom of opening
         }
 
         // --------------------------------------------------------------------
@@ -57,9 +42,6 @@ namespace AILevelDesign
             return CreateCubeShape(name, position, size, Quaternion.identity, null);
         }
 
-        /// <summary>
-        /// Generic element builder for custom pieces (walls, props, doors) using a cube.
-        /// </summary>
         public static GameObject CreateElement(string name, Vector3 position, Vector3 size, Quaternion rotation, Transform parent = null)
         {
             return CreateCubeShape(name, position, size, rotation, parent);
@@ -67,9 +49,7 @@ namespace AILevelDesign
 
         /// <summary>
         /// Create a wall with rectangular openings (doors/windows).
-        /// WallAxis.X → wall is long along X, thickness along Z, height along Y.
-        /// WallAxis.Z → wall is long along Z, thickness along X, height along Y.
-        /// Wall has zero local rotation; openings are defined in its local space.
+        /// Header FIX applied: header height = 1 unit always.
         /// </summary>
         public static GameObject CreateWallWithOpenings(
             string name,
@@ -94,11 +74,8 @@ namespace AILevelDesign
             float length = (axis == WallAxis.X) ? size.x : size.z;
             float halfLength = length * 0.5f;
 
-            // Actual thickness from the size (we ignore the "thickness" argument for geometry;
-            // it's only informational now).
             float depth = (axis == WallAxis.X) ? size.z : size.x;
 
-            // Sort openings along the length (so we can sweep and place segments).
             Array.Sort(openings, (a, b) => a.center.CompareTo(b.center));
 
             float cursor = -halfLength;
@@ -117,7 +94,9 @@ namespace AILevelDesign
 
                 float baseY = Mathf.Clamp(op.baseY, 0f, height - opHeight);
 
-                // Left side segment (from cursor to start of opening)
+                // ------------------------------
+                // LEFT SIDE WALL SEGMENT
+                // ------------------------------
                 float left = Mathf.Max(cursor, opCenter - opWidth * 0.5f);
                 if (left > cursor + 0.001f)
                 {
@@ -138,42 +117,40 @@ namespace AILevelDesign
                     CreateCubeShape($"Seg_{segmentIndex++}", segPos, segSize, Quaternion.identity, wallParent.transform);
                 }
 
-                // Header segment above the opening
+                // ------------------------------
+                // FIXED HEADER (NEW)
+                // Always exactly 1 unit high
+                // ------------------------------
                 float openingBottomLocalY = -halfHeight + baseY;
                 float openingTopLocalY = openingBottomLocalY + opHeight;
-                float headerHeight = halfHeight - openingTopLocalY;
 
-                if (headerHeight > 0.01f)
+                float headerHeight = 1f;   // FIXED
+                float headerLocalY = 1f;   // Y = 1 always
+
+                Vector3 headerSize, headerPos;
+
+                if (axis == WallAxis.X)
                 {
-                    Vector3 headerSize, headerPos;
-
-                    if (axis == WallAxis.X)
-                    {
-                        headerSize = new Vector3(opWidth, headerHeight, depth);
-                        headerPos = new Vector3(
-                            opCenter,
-                            openingTopLocalY + headerHeight * 0.5f,
-                            0f
-                        );
-                    }
-                    else
-                    {
-                        headerSize = new Vector3(depth, headerHeight, opWidth);
-                        headerPos = new Vector3(
-                            0f,
-                            openingTopLocalY + headerHeight * 0.5f,
-                            opCenter
-                        );
-                    }
-
-                    CreateCubeShape($"Header_{segmentIndex++}", headerPos, headerSize, Quaternion.identity, wallParent.transform);
+                    headerSize = new Vector3(opWidth, headerHeight, depth);
+                    headerPos = new Vector3(opCenter, headerLocalY, 0f);
+                }
+                else
+                {
+                    headerSize = new Vector3(depth, headerHeight, opWidth);
+                    headerPos = new Vector3(0f, headerLocalY, opCenter);
                 }
 
-                // Advance cursor to right edge of opening
+                CreateCubeShape($"Header_{segmentIndex++}", headerPos, headerSize, Quaternion.identity, wallParent.transform);
+
+                // ------------------------------
+                // UPDATE CURSOR AFTER OPENING
+                // ------------------------------
                 cursor = opCenter + opWidth * 0.5f;
             }
 
-            // Right side segment (from last opening to end of wall)
+            // ------------------------------
+            // RIGHT SIDE WALL SEGMENT
+            // ------------------------------
             if (cursor < halfLength - 0.001f)
             {
                 float segLen = halfLength - cursor;
@@ -205,9 +182,6 @@ namespace AILevelDesign
         // Internal helpers
         // --------------------------------------------------------------------
 
-        /// <summary>
-        /// Build a simple room from floor, ceiling, and four walls (all cubes).
-        /// </summary>
         private static GameObject CreateRoomComposite(string name, Vector3 worldPosition, Vector3 size, float wallThickness, float floorThickness)
         {
             GameObject parent = new GameObject(string.IsNullOrEmpty(name) ? "Room" : name);
@@ -217,29 +191,21 @@ namespace AILevelDesign
             float halfY = size.y * 0.5f;
             float halfZ = size.z * 0.5f;
 
-            // Floor
             Vector3 floorSize = new Vector3(size.x, floorThickness, size.z);
             Vector3 floorLocalPos = new Vector3(0f, -halfY + floorThickness * 0.5f, 0f);
             CreateCubeShape("Floor", floorLocalPos, floorSize, Quaternion.identity, parent.transform);
 
-            // Ceiling
             Vector3 ceilSize = new Vector3(size.x, floorThickness, size.z);
             Vector3 ceilLocalPos = new Vector3(0f, halfY - floorThickness * 0.5f, 0f);
             CreateCubeShape("Ceiling", ceilLocalPos, ceilSize, Quaternion.identity, parent.transform);
 
-            // Front/Back walls (long along X, zero rotation)
             Vector3 wallSizeFrontBack = new Vector3(size.x, size.y, wallThickness);
-            Vector3 frontPos = new Vector3(0f, 0f, halfZ - wallThickness * 0.5f);
-            Vector3 backPos = new Vector3(0f, 0f, -halfZ + wallThickness * 0.5f);
-            CreateCubeShape("Wall_Front", frontPos, wallSizeFrontBack, Quaternion.identity, parent.transform);
-            CreateCubeShape("Wall_Back", backPos, wallSizeFrontBack, Quaternion.identity, parent.transform);
+            CreateCubeShape("Wall_Front", new Vector3(0f, 0f, halfZ - wallThickness * 0.5f), wallSizeFrontBack, Quaternion.identity, parent.transform);
+            CreateCubeShape("Wall_Back", new Vector3(0f, 0f, -halfZ + wallThickness * 0.5f), wallSizeFrontBack, Quaternion.identity, parent.transform);
 
-            // Left/Right walls (long along Z, zero rotation)
             Vector3 wallSizeLeftRight = new Vector3(wallThickness, size.y, size.z);
-            Vector3 rightPos = new Vector3(halfX - wallThickness * 0.5f, 0f, 0f);
-            Vector3 leftPos = new Vector3(-halfX + wallThickness * 0.5f, 0f, 0f);
-            CreateCubeShape("Wall_Right", rightPos, wallSizeLeftRight, Quaternion.identity, parent.transform);
-            CreateCubeShape("Wall_Left", leftPos, wallSizeLeftRight, Quaternion.identity, parent.transform);
+            CreateCubeShape("Wall_Right", new Vector3(halfX - wallThickness * 0.5f, 0f, 0f), wallSizeLeftRight, Quaternion.identity, parent.transform);
+            CreateCubeShape("Wall_Left", new Vector3(-halfX + wallThickness * 0.5f, 0f, 0f), wallSizeLeftRight, Quaternion.identity, parent.transform);
 
 #if UNITY_EDITOR
             Undo.RegisterCreatedObjectUndo(parent, $"Create {parent.name}");
