@@ -71,7 +71,7 @@
           "id": "toilet_1",
           "type": "toilet",
           "size": [3, 3, 3],
-          "position": [7, 0, 0],
+          "position": [6.5, 0, 0],
           "doors": [
             {
               "id": "door_t1_h",
