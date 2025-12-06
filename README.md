@@ -1,6 +1,6 @@
 🏗️ AI-Powered Procedural Building Generator for Unity
 
-![Demo]([assets/animation.gif](https://github.com/ankix86/AI-LevelDesigner/blob/main/Video.gif))
+![Demo](https://github.com/ankix86/AI-LevelDesigner/blob/main/Video.gif)
 
 Automatically build full environments using JSON created by an AI Level Architect
 
