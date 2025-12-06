@@ -107,18 +107,23 @@ public class AILevelGenerator : EditorWindow
                     GameObject roomRoot = new GameObject(string.IsNullOrEmpty(room.id) ? "Room" : room.id);
                     roomRoot.transform.position = roomPos;
 
-                    bool hasCustom = (room.floor != null) || (room.roof != null) ||
-                                     (room.walls != null && room.walls.Length > 0);
+                    bool hasCustomFloor = room.floor != null;
+                    bool hasCustomWalls = room.walls != null && room.walls.Length > 0;
+                    bool hasCustomRoof = room.roof != null;
 
-                    if (!hasCustom)
+                    if (!hasCustomFloor && !hasCustomWalls)
                     {
                         BuildAutoRoomWithOpenings(room, roomRoot, roomSize);
+                        if (hasCustomRoof)
+                        {
+                            AddRoofElement(room, roomRoot, roomSize);
+                        }
                         roomLookup[room.id] = roomRoot;
                     }
                     else
                     {
                         // Floor
-                        if (room.floor != null)
+                        if (hasCustomFloor)
                         {
                             Vector3 size = SanitizeSize(room.floor.size, defaultY: 0.1f, defaultX: roomSize.x, defaultZ: roomSize.z);
                             Vector3 pos = SnapVector(ToPosition(room.floor.position, new Vector3(0f, -roomSize.y * 0.5f + size.y * 0.5f, 0f)));
@@ -126,15 +131,12 @@ public class AILevelGenerator : EditorWindow
                             PBHelper.CreateElement(string.IsNullOrEmpty(room.floor.id) ? "Floor" : room.floor.id, pos, size, rot, roomRoot.transform);
                         }
                         // Roof
-                        if (room.roof != null)
+                        if (hasCustomRoof)
                         {
-                            Vector3 size = SanitizeSize(room.roof.size, defaultY: 0.1f, defaultX: roomSize.x, defaultZ: roomSize.z);
-                            Vector3 pos = SnapVector(ToPosition(room.roof.position, new Vector3(0f, roomSize.y * 0.5f - size.y * 0.5f, 0f)));
-                            Quaternion rot = ToRotation(room.roof.rotation);
-                            PBHelper.CreateElement(string.IsNullOrEmpty(room.roof.id) ? "Roof" : room.roof.id, pos, size, rot, roomRoot.transform);
+                            AddRoofElement(room, roomRoot, roomSize);
                         }
                         // Custom walls
-                        if (room.walls != null)
+                        if (hasCustomWalls)
                         {
                             for (int w = 0; w < room.walls.Length; w++)
                             {
@@ -186,7 +188,7 @@ public class AILevelGenerator : EditorWindow
         }
 
         int connectorCount = AutoCreateInvisibleDoorConnectors(data, roomLookup);
-        RoomAutoAligner.AlignRooms(roomLookup);
+        RoomAutoAligner.AlignRooms(roomLookup, defaultWallThickness);
 
         Debug.Log($"AI Level Generator: Created {roomLookup.Count} rooms, {(data.stairs?.Length ?? 0)} stairs, and auto-aligned {connectorCount} door connectors.");
     }
@@ -493,27 +495,38 @@ public class AILevelGenerator : EditorWindow
         if (min == distFront)
         {
             float clampedX = Mathf.Clamp(localCenter.x, -halfX + doorSize.x * 0.5f, halfX - doorSize.x * 0.5f);
-            localPos = new Vector3(clampedX, localCenter.y, halfZ - defaultWallThickness * 0.5f);
+            localPos = new Vector3(clampedX, localCenter.y, halfZ);
             return true;
         }
 
         if (min == distBack)
         {
             float clampedX = Mathf.Clamp(localCenter.x, -halfX + doorSize.x * 0.5f, halfX - doorSize.x * 0.5f);
-            localPos = new Vector3(clampedX, localCenter.y, -halfZ + defaultWallThickness * 0.5f);
+            localPos = new Vector3(clampedX, localCenter.y, -halfZ);
             return true;
         }
 
         if (min == distRight)
         {
             float clampedZ = Mathf.Clamp(localCenter.z, -halfZ + doorSize.x * 0.5f, halfZ - doorSize.x * 0.5f);
-            localPos = new Vector3(halfX - defaultWallThickness * 0.5f, localCenter.y, clampedZ);
+            localPos = new Vector3(halfX, localCenter.y, clampedZ);
             return true;
         }
 
         float clampedZLeft = Mathf.Clamp(localCenter.z, -halfZ + doorSize.x * 0.5f, halfZ - doorSize.x * 0.5f);
-        localPos = new Vector3(-halfX + defaultWallThickness * 0.5f, localCenter.y, clampedZLeft);
+        localPos = new Vector3(-halfX, localCenter.y, clampedZLeft);
         return true;
+    }
+
+    private void AddRoofElement(Room room, GameObject roomRoot, Vector3 roomSize)
+    {
+        if (room?.roof == null)
+            return;
+
+        Vector3 size = SanitizeSize(room.roof.size, defaultY: 0.1f, defaultX: roomSize.x, defaultZ: roomSize.z);
+        Vector3 pos = SnapVector(ToPosition(room.roof.position, new Vector3(0f, roomSize.y * 0.5f - size.y * 0.5f, 0f)));
+        Quaternion rot = ToRotation(room.roof.rotation);
+        PBHelper.CreateElement(string.IsNullOrEmpty(room.roof.id) ? "Roof" : room.roof.id, pos, size, rot, roomRoot.transform);
     }
 
     // ------------------------------------------------------------------------

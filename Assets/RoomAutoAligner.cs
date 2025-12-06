@@ -8,7 +8,7 @@ using UnityEngine;
 /// </summary>
 public static class RoomAutoAligner
 {
-    public static void AlignRooms(Dictionary<string, GameObject> roomLookup)
+    public static void AlignRooms(Dictionary<string, GameObject> roomLookup, float wallThickness = 0.1f)
     {
         if (roomLookup == null || roomLookup.Count == 0)
             return;
@@ -51,6 +51,7 @@ public static class RoomAutoAligner
                 continue;
 
             Vector3 anchorPos = anchor.transform.position;
+            Vector3 anchorNormal = GuessConnectorNormal(anchor.transform, anchorRoomRoot);
 
             foreach (var c in list)
             {
@@ -90,5 +91,23 @@ public static class RoomAutoAligner
             t = t.parent;
         }
         return t;
+    }
+
+    private static Vector3 GuessConnectorNormal(Transform connector, Transform roomRoot)
+    {
+        Vector3 localPos = roomRoot.InverseTransformPoint(connector.position);
+
+        if (Mathf.Abs(localPos.x) >= Mathf.Abs(localPos.z))
+        {
+            float sign = Mathf.Sign(localPos.x);
+            if (Mathf.Approximately(sign, 0f)) sign = 1f;
+            return roomRoot.TransformDirection(new Vector3(sign, 0f, 0f));
+        }
+        else
+        {
+            float sign = Mathf.Sign(localPos.z);
+            if (Mathf.Approximately(sign, 0f)) sign = 1f;
+            return roomRoot.TransformDirection(new Vector3(0f, 0f, sign));
+        }
     }
 }
