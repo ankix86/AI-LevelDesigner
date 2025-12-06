@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
@@ -184,7 +185,10 @@ public class AILevelGenerator : EditorWindow
             }
         }
 
-        Debug.Log($"AI Level Generator: Created {roomLookup.Count} rooms and {(data.stairs?.Length ?? 0)} stairs.");
+        int connectorCount = AutoCreateInvisibleDoorConnectors(data, roomLookup);
+        RoomAutoAligner.AlignRooms(roomLookup);
+
+        Debug.Log($"AI Level Generator: Created {roomLookup.Count} rooms, {(data.stairs?.Length ?? 0)} stairs, and auto-aligned {connectorCount} door connectors.");
     }
 
     // ------------------------------------------------------------------------
@@ -386,6 +390,133 @@ public class AILevelGenerator : EditorWindow
     }
 
     // ------------------------------------------------------------------------
+    // Invisible connector creation & alignment helpers
+    // ------------------------------------------------------------------------
+
+    private int AutoCreateInvisibleDoorConnectors(LevelData data, Dictionary<string, GameObject> roomLookup)
+    {
+        if (data?.floors == null || roomLookup == null || roomLookup.Count == 0)
+            return 0;
+
+        int created = 0;
+        HashSet<string> anchorAssigned = new HashSet<string>();
+
+        foreach (var floor in data.floors)
+        {
+            if (floor?.rooms == null) continue;
+
+            foreach (var room in floor.rooms)
+            {
+                if (room == null || string.IsNullOrEmpty(room.id) || room.doors == null || room.doors.Length == 0)
+                    continue;
+
+                if (!roomLookup.TryGetValue(room.id, out GameObject roomRoot) || roomRoot == null)
+                    continue;
+
+                Vector3 roomSize = ToSize(room.size, defaultRoomHeight);
+
+                foreach (var door in room.doors.Where(d => d != null))
+                {
+                    if (string.IsNullOrEmpty(door.from_room) || string.IsNullOrEmpty(door.to_room))
+                        continue;
+
+                    string connectionId = BuildConnectionKey(door.from_room, door.to_room);
+                    if (string.IsNullOrEmpty(connectionId))
+                        continue;
+
+                    if (!TryComputeDoorConnectorLocal(roomSize, door, out Vector3 localPos))
+                        continue;
+
+                    bool isAnchor = !anchorAssigned.Contains(connectionId);
+                    if (isAnchor) anchorAssigned.Add(connectionId);
+
+                    CreateInvisibleConnector(roomRoot.transform, connectionId, localPos, isAnchor);
+                    created++;
+                }
+            }
+        }
+
+        return created;
+    }
+
+    private string BuildConnectionKey(string a, string b)
+    {
+        if (string.IsNullOrEmpty(a) && string.IsNullOrEmpty(b))
+            return null;
+
+        string first = a ?? string.Empty;
+        string second = b ?? string.Empty;
+        return string.CompareOrdinal(first, second) <= 0
+            ? $"{first}__{second}"
+            : $"{second}__{first}";
+    }
+
+    private void CreateInvisibleConnector(Transform parent, string connectorId, Vector3 localPos, bool isAnchor)
+    {
+        GameObject go = new GameObject($"InvisibleObjectConnector ({connectorId})");
+        go.transform.SetParent(parent, false);
+        go.transform.localPosition = localPos;
+
+        InvisibleConnector connector = go.AddComponent<InvisibleConnector>();
+        connector.connectorId = connectorId;
+        connector.connectorType = ConnectorType.Door;
+        connector.isAnchor = isAnchor;
+    }
+
+    private bool TryComputeDoorConnectorLocal(Vector3 roomSize, Door door, out Vector3 localPos)
+    {
+        localPos = Vector3.zero;
+        if (door == null)
+            return false;
+
+        Vector3 doorSize = SanitizeSize(door.size, defaultY: 2.0f, defaultX: 1.0f, defaultZ: 0.3f);
+
+        float dx = (door.position != null && door.position.Length > 0) ? door.position[0] : 0f;
+        float dz = (door.position != null && door.position.Length > 1) ? door.position[1] : 0f;
+        float bottomY = (door.position != null && door.position.Length > 2) ? door.position[2] : 0f;
+
+        float centerFromFloor = bottomY + doorSize.y * 0.5f;
+
+        float halfX = roomSize.x * 0.5f;
+        float halfY = roomSize.y * 0.5f;
+        float halfZ = roomSize.z * 0.5f;
+
+        Vector3 localCenter = new Vector3(dx, -halfY + centerFromFloor, dz);
+
+        float distFront = Mathf.Abs(localCenter.z - (halfZ - defaultWallThickness * 0.5f));
+        float distBack = Mathf.Abs(localCenter.z + (halfZ - defaultWallThickness * 0.5f));
+        float distRight = Mathf.Abs(localCenter.x - (halfX - defaultWallThickness * 0.5f));
+        float distLeft = Mathf.Abs(localCenter.x + (halfX - defaultWallThickness * 0.5f));
+
+        float min = Mathf.Min(distFront, distBack, distRight, distLeft);
+
+        if (min == distFront)
+        {
+            float clampedX = Mathf.Clamp(localCenter.x, -halfX + doorSize.x * 0.5f, halfX - doorSize.x * 0.5f);
+            localPos = new Vector3(clampedX, localCenter.y, halfZ - defaultWallThickness * 0.5f);
+            return true;
+        }
+
+        if (min == distBack)
+        {
+            float clampedX = Mathf.Clamp(localCenter.x, -halfX + doorSize.x * 0.5f, halfX - doorSize.x * 0.5f);
+            localPos = new Vector3(clampedX, localCenter.y, -halfZ + defaultWallThickness * 0.5f);
+            return true;
+        }
+
+        if (min == distRight)
+        {
+            float clampedZ = Mathf.Clamp(localCenter.z, -halfZ + doorSize.x * 0.5f, halfZ - doorSize.x * 0.5f);
+            localPos = new Vector3(halfX - defaultWallThickness * 0.5f, localCenter.y, clampedZ);
+            return true;
+        }
+
+        float clampedZLeft = Mathf.Clamp(localCenter.z, -halfZ + doorSize.x * 0.5f, halfZ - doorSize.x * 0.5f);
+        localPos = new Vector3(-halfX + defaultWallThickness * 0.5f, localCenter.y, clampedZLeft);
+        return true;
+    }
+
+    // ------------------------------------------------------------------------
     // Data classes for JSON
     // ------------------------------------------------------------------------
 
@@ -469,3 +600,4 @@ public class AILevelGenerator : EditorWindow
         public float[] rotation;
     }
 }
+
