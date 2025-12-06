@@ -184,8 +184,15 @@ public class AILevelGenerator : EditorWindow
             }
         }
 
-        var connectivityIssues = LevelConnectivityFinalizer.ValidateRooms(roomLookup, defaultWallThickness * 0.5f);
+        float allowedGap = defaultWallThickness * 0.5f;
+        var connectivityIssues = LevelConnectivityFinalizer.ValidateRooms(roomLookup, allowedGap);
         LevelConnectivityFinalizer.LogReport(connectivityIssues);
+
+        var autoAdjustments = LevelConnectivityFinalizer.ResolveMinorIssues(roomLookup, allowedGap, maxSnapDistance: 0.5f);
+        if (autoAdjustments.Count > 0)
+        {
+            Debug.Log($"Level connectivity: applied {autoAdjustments.Count} auto-adjustment(s) to close gaps/overlaps.");
+        }
 
         Debug.Log($"AI Level Generator: Created {roomLookup.Count} rooms and {(data.stairs?.Length ?? 0)} stairs.");
     }
