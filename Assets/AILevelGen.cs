@@ -184,6 +184,9 @@ public class AILevelGenerator : EditorWindow
             }
         }
 
+        var connectivityIssues = LevelConnectivityFinalizer.ValidateRooms(roomLookup, defaultWallThickness * 0.5f);
+        LevelConnectivityFinalizer.LogReport(connectivityIssues);
+
         Debug.Log($"AI Level Generator: Created {roomLookup.Count} rooms and {(data.stairs?.Length ?? 0)} stairs.");
     }
 
