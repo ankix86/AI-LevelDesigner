@@ -260,6 +260,7 @@ namespace AILevelDesign
             {
                 collider = mesh.gameObject.AddComponent<MeshCollider>();
             }
+            collider.convex = true;
 
             var mf = mesh.GetComponent<MeshFilter>();
             collider.sharedMesh = mf != null ? mf.sharedMesh : null;
@@ -294,7 +295,11 @@ namespace AILevelDesign
             MeshFilter mf = go.AddComponent<MeshFilter>();
             MeshRenderer mr = go.AddComponent<MeshRenderer>();
             MeshCollider mc = go.AddComponent<MeshCollider>();
-
+            if (mc != null)
+            {
+                mc.sharedMesh = mf != null ? mf.sharedMesh : null;
+                mc.convex = true;
+            }
             if (material != null)
                 mr.sharedMaterial = material;
 
